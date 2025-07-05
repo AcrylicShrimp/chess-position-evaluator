@@ -1,5 +1,4 @@
 import chess
-import time
 import duckdb
 import fen2tensor
 import torch
