@@ -29,6 +29,8 @@ def train(
 
     model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    grad_scaler = torch.amp.GradScaler()
+    enable_amp = device.type != "cpu"
 
     for epoch in range(epochs):
         pbar = tqdm(
@@ -45,11 +47,19 @@ def train(
             input = input.to(device)
             label = label.to(device)
 
-            optimizer.zero_grad()
-            output = model(input)
-            loss, cp_loss, mate_loss = compute_loss(output, label)
-            loss.backward()
-            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+
+            with torch.autocast(device_type=device.type, enabled=enable_amp):
+                output = model(input)
+                loss, cp_loss, mate_loss = compute_loss(output, label)
+
+            if enable_amp:
+                grad_scaler.scale(loss).backward()
+                grad_scaler.step(optimizer)
+                grad_scaler.update()
+            else:
+                loss.backward()
+                optimizer.step()
 
             loss_acc += loss.item()
             cp_loss_acc += cp_loss.item()
