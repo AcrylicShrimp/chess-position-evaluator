@@ -1,5 +1,4 @@
 import torch
-from livelossplot import PlotLosses
 from model import Model
 from prepare_train_data import TrainData, worker_init_fn
 from train import train
@@ -7,7 +6,6 @@ from train import train
 
 def main():
     model = Model()
-    loss_plot = PlotLosses(figsize=(10, 5))
 
     while True:
         print(f"[✓] Loading data...")
@@ -17,9 +15,8 @@ def main():
         data_loader = torch.utils.data.DataLoader(
             train_data,
             batch_size=128,
-            pin_memory=True,
             shuffle=True,
-            num_workers=4,
+            num_workers=2,
             worker_init_fn=worker_init_fn,
         )
 
@@ -29,7 +26,6 @@ def main():
             "model.pth",
             epochs=10,
             steps_per_epoch=512,
-            loss_plot=loss_plot,
         )
 
 

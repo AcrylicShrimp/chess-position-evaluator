@@ -26,7 +26,14 @@ class TrainData(torch.utils.data.Dataset):
         print(f"[✓] Using {self.len} rows total")
 
     def connect(self):
-        self.conn = duckdb.connect(self.db_path, read_only=True)
+        self.conn = duckdb.connect(
+            self.db_path,
+            read_only=True,
+            config={
+                "memory_limit": "2GiB",
+                "threads": 2,
+            },
+        )
 
     def __len__(self) -> int:
         return self.len
