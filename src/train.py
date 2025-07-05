@@ -1,5 +1,4 @@
 import itertools
-import os
 import torch
 from livelossplot import PlotLosses
 from model import Model
@@ -14,10 +13,6 @@ def train(
     steps_per_epoch: int = 512,
     loss_plot: PlotLosses | None = None,
 ):
-    if os.path.exists(checkpoint_path):
-        model.load_state_dict(torch.load(checkpoint_path))
-        print(f"[✓] Loaded model from {checkpoint_path}")
-
     if torch.cuda.is_available():
         device = torch.device("cuda")
     elif torch.backends.mps.is_available():
