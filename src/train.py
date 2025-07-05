@@ -39,6 +39,7 @@ def train(
         data_loader = torch.utils.data.DataLoader(
             train_data,
             batch_size=batch_size,
+            pin_memory=True,
             shuffle=True,
         )
         pbar = tqdm(

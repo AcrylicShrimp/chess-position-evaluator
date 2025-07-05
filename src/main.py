@@ -1,4 +1,3 @@
-#! /usr/bin/env python3
 import torch
 from livelossplot import PlotLosses
 from model import Model
@@ -14,7 +13,7 @@ def main():
         print(f"[✓] Loading data...")
         train_data = TrainData(
             "lichess_db_eval.parquet",
-            percentage=0.1,
+            percentage=0.001,
         )
 
         train(
