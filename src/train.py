@@ -3,17 +3,15 @@ import os
 import torch
 from livelossplot import PlotLosses
 from model import Model
-from prepare_train_data import TrainData
 from tqdm import tqdm
 
 
 def train(
     model: Model,
-    train_data: TrainData,
+    data_loader: torch.utils.data.DataLoader,
     checkpoint_path: str,
     epochs: int,
     steps_per_epoch: int = 512,
-    batch_size: int = 128,
     loss_plot: PlotLosses | None = None,
 ):
     if os.path.exists(checkpoint_path):
@@ -32,16 +30,7 @@ def train(
     model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    train_data.reload()
-    print(f"[✓] Loaded {len(train_data)} rows")
-
     for epoch in range(epochs):
-        data_loader = torch.utils.data.DataLoader(
-            train_data,
-            batch_size=batch_size,
-            pin_memory=True,
-            shuffle=True,
-        )
         pbar = tqdm(
             itertools.islice(data_loader, steps_per_epoch),
             total=steps_per_epoch,
