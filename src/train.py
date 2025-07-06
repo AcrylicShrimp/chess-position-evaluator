@@ -29,7 +29,6 @@ def train(
     enable_amp = device.type != "cpu"
 
     for epoch in range(epochs):
-        scheduler.step()
         pbar = tqdm(
             itertools.islice(data_loader, steps_per_epoch),
             total=steps_per_epoch,
@@ -84,6 +83,8 @@ def train(
                 }
             )
             loss_plot.send()
+
+        scheduler.step()
 
 
 def compute_loss(
