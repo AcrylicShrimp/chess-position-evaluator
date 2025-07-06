@@ -49,14 +49,15 @@ class Trainer:
     def train(
         self,
         checkpoint_path: str,
-        data_loader: torch.utils.data.DataLoader,
+        train_data_loader: torch.utils.data.DataLoader,
+        validation_data_loader: torch.utils.data.DataLoader,
         epochs: int,
         steps_per_epoch: int = 512,
         loss_plot: PlotLosses | None = None,
     ):
         for epoch in range(epochs):
-            pbar = tqdm(
-                itertools.islice(data_loader, steps_per_epoch),
+            pbar: tqdm[tuple[torch.Tensor, torch.Tensor]] = tqdm(
+                itertools.islice(train_data_loader, steps_per_epoch),
                 total=steps_per_epoch,
                 desc=f"Epoch {epoch + 1}/{epochs}",
                 unit="step",
@@ -109,7 +110,8 @@ class Trainer:
                         },
                         checkpoint_path,
                     )
-                    del data_loader._iterator
+                    del train_data_loader._iterator
+                    del validation_data_loader._iterator
                     print("[!] Stopping training (Ctrl+C pressed)")
                     exit(0)
 
@@ -125,7 +127,8 @@ class Trainer:
             print(f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
 
             if self.should_stop:
-                del data_loader._iterator
+                del train_data_loader._iterator
+                del validation_data_loader._iterator
                 print("[!] Stopping training (Ctrl+C pressed)")
                 exit(0)
 
@@ -140,6 +143,33 @@ class Trainer:
                 loss_plot.send()
 
             self.scheduler.step()
+
+            validation_loss_acc = 0.0
+            validation_cp_loss_acc = 0.0
+            validation_mate_loss_acc = 0.0
+            validation_steps = min(steps_per_epoch // 10, 1)
+
+            for input, label in itertools.islice(
+                validation_data_loader, validation_steps
+            ):
+                with torch.no_grad():
+                    input = input.to(self.device)
+                    label = label.to(self.device)
+
+                    output = self.model(input)
+                    loss, cp_loss, mate_loss = compute_loss(output, label)
+
+                    validation_loss_acc += loss.item()
+                    validation_cp_loss_acc += cp_loss.item()
+                    validation_mate_loss_acc += mate_loss.item()
+
+            avg_validation_loss = validation_loss_acc / validation_steps
+            avg_validation_cp_loss = validation_cp_loss_acc / validation_steps
+            avg_validation_mate_loss = validation_mate_loss_acc / validation_steps
+
+            print(
+                f"[✓] Validation Loss: {avg_validation_loss:.4f} — CP Loss: {avg_validation_cp_loss:.4f} — Mate Loss: {avg_validation_mate_loss:.4f}"
+            )
 
 
 def compute_loss(
