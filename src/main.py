@@ -9,8 +9,8 @@ def main():
     train_data_path = "train.chesseval"
     checkpoint_path = "model.pth"
     batch_size = 128
-    epochs = 10
-    steps_per_epoch = 512
+    epochs = 100
+    steps_per_epoch = 1024
 
     model = Model()
 

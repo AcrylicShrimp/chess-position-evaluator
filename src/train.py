@@ -23,11 +23,13 @@ def train(
     print(f"[✓] Using device: {device}")
 
     model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10)
     grad_scaler = torch.amp.GradScaler()
     enable_amp = device.type != "cpu"
 
     for epoch in range(epochs):
+        scheduler.step()
         pbar = tqdm(
             itertools.islice(data_loader, steps_per_epoch),
             total=steps_per_epoch,
