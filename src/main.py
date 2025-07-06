@@ -25,7 +25,7 @@ def main():
         train_data,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=8,
+        num_workers=2,
         pin_memory=True,
         worker_init_fn=worker_init_fn,
     )
