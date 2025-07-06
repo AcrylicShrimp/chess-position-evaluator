@@ -16,27 +16,19 @@ def read_chess_evaluation(
         struct.unpack("<BQQQ12QfB", row)
     )
 
-    is_white_turn = bitflags & 1 == 1
-    has_white_kingside_castling_rights = bitflags & 2 == 2
-    has_white_queenside_castling_rights = bitflags & 4 == 4
-    has_black_kingside_castling_rights = bitflags & 8 == 8
-    has_black_queenside_castling_rights = bitflags & 16 == 16
-
-    turn = boolean2tensor(is_white_turn)
-    white_kingside_castling_rights = boolean2tensor(has_white_kingside_castling_rights)
-    white_queenside_castling_rights = boolean2tensor(
-        has_white_queenside_castling_rights
+    turn = boolean2tensor(bitflags & 1 == 1)
+    white_kingside_castling_rights = boolean2tensor(bitflags & 2 == 2)
+    white_queenside_castling_rights = boolean2tensor(bitflags & 4 == 4)
+    black_kingside_castling_rights = boolean2tensor(bitflags & 8 == 8)
+    black_queenside_castling_rights = boolean2tensor(bitflags & 16 == 16)
+    bitboards = bitboard2tensors(
+        [
+            player_en_passant,
+            white_attacks,
+            black_attacks,
+            *pieces,
+        ]
     )
-    black_kingside_castling_rights = boolean2tensor(has_black_kingside_castling_rights)
-    black_queenside_castling_rights = boolean2tensor(
-        has_black_queenside_castling_rights
-    )
-
-    player_en_passant_squares = bitboard2tensor(player_en_passant)
-    white_attacks = bitboard2tensor(white_attacks)
-    black_attacks = bitboard2tensor(black_attacks)
-    white_pieces = bitboard2tensor_pieces(pieces[:6])
-    black_pieces = bitboard2tensor_pieces(pieces[6:])
 
     # 4. create the input tensor
     input = torch.vstack(
@@ -46,11 +38,7 @@ def read_chess_evaluation(
             white_queenside_castling_rights,
             black_kingside_castling_rights,
             black_queenside_castling_rights,
-            player_en_passant_squares,
-            white_attacks,
-            black_attacks,
-            white_pieces,
-            black_pieces,
+            bitboards,
         ]
     )
 
@@ -61,21 +49,11 @@ def read_chess_evaluation(
 
 
 def boolean2tensor(boolean: bool) -> torch.Tensor:
-    if boolean:
-        return torch.ones((1, 8, 8), dtype=torch.float32)
-    else:
-        return torch.zeros((1, 8, 8), dtype=torch.float32)
+    return torch.full((1, 8, 8), 1.0 if boolean else 0.0, dtype=torch.float32)
 
 
-def bitboard2tensor(bitboard: int) -> torch.Tensor:
-    unpacked = np.unpackbits(
-        np.array([bitboard], dtype="<u8").view(np.uint8), bitorder="little"
-    )
-    return torch.from_numpy(unpacked).view(1, 8, 8).float()
-
-
-def bitboard2tensor_pieces(bitboards: list[int]) -> torch.Tensor:
+def bitboard2tensors(bitboards: list[int]) -> torch.Tensor:
     unpacked = np.unpackbits(
         np.array(bitboards, dtype="<u8").view(np.uint8), bitorder="little"
     )
-    return torch.from_numpy(unpacked).view(6, 8, 8).float()
+    return torch.from_numpy(unpacked).view(len(bitboards), 8, 8).float()
