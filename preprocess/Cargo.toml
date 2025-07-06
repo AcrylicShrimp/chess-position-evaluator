@@ -1,0 +1,11 @@
+[package]
+name = "preprocess"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1"
+chess = "3"
+duckdb = { version = "1", features = ["json"] }
+rayon = "1"
+tokio = { version = "1", features = ["full"] }

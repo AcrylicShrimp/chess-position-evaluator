@@ -1,0 +1,80 @@
+mod write_chesseval;
+
+use duckdb::{Connection, params};
+
+const DUCKDB_TEMP_PATH: &str = "lichess_db_eval.duckdb.tmp";
+const CHESS_EVALUATION_DB_PATH: &str = "lichess_db_eval.jsonl";
+const TRAIN_CHESSEVAL_PATH: &str = "train.chesseval";
+const VALIDATION_CHESSEVAL_PATH: &str = "validation.chesseval";
+const VALIDATION_SET_RATIO: f64 = 0.1;
+
+#[tokio::main]
+async fn main() -> Result<(), anyhow::Error> {
+    if tokio::fs::try_exists(DUCKDB_TEMP_PATH).await? {
+        println!("{} already exists; removing...", DUCKDB_TEMP_PATH);
+        tokio::fs::remove_file(DUCKDB_TEMP_PATH).await?;
+    }
+
+    if tokio::fs::try_exists(TRAIN_CHESSEVAL_PATH).await? {
+        println!("{} already exists; removing...", TRAIN_CHESSEVAL_PATH);
+        tokio::fs::remove_file(TRAIN_CHESSEVAL_PATH).await?;
+    }
+
+    if tokio::fs::try_exists(VALIDATION_CHESSEVAL_PATH).await? {
+        println!("{} already exists; removing...", VALIDATION_CHESSEVAL_PATH);
+        tokio::fs::remove_file(VALIDATION_CHESSEVAL_PATH).await?;
+    }
+
+    let conn = Connection::open("lichess_db_eval.duckdb.tmp")?;
+
+    // 1. create temp table with rows
+    conn.prepare(
+        "
+        CREATE TABLE rows AS (
+            SELECT fen, pvs.cp as cp
+            FROM (
+                SELECT fen, list_extract(eval.pvs, 1) as pvs
+                FROM (
+                    SELECT fen, unnest(evals) as eval
+                    FROM read_json_auto(?1)
+                )
+                WHERE 10 <= eval.depth AND array_length(eval.pvs) != 0
+            )
+            WHERE (pvs.cp IS NOT NULL AND 100 <= ABS(pvs.cp)) OR (pvs.mate IS NOT NULL)
+            ORDER BY RANDOM()
+        )
+        ",
+    )?
+    .execute(params![CHESS_EVALUATION_DB_PATH])?;
+
+    let row_count = conn.query_row::<i64, _, _>("SELECT COUNT(*) FROM rows", params![], |row| {
+        row.get::<_, i64>(0)
+    })?;
+    println!("total {} rows loaded", row_count);
+
+    // 2. compute train and validation set sizes
+    let validation_set_size = (row_count as f64 * VALIDATION_SET_RATIO) as i64;
+    let train_set_size = row_count - validation_set_size;
+
+    println!("train set size: {}", train_set_size);
+    println!("validation set size: {}", validation_set_size);
+
+    drop(conn);
+
+    println!("writing train set to {}", TRAIN_CHESSEVAL_PATH);
+    write_chesseval::write_chesseval(DUCKDB_TEMP_PATH, TRAIN_CHESSEVAL_PATH, 0, train_set_size)
+        .await?;
+
+    println!("writing validation set to {}", VALIDATION_CHESSEVAL_PATH);
+    write_chesseval::write_chesseval(
+        DUCKDB_TEMP_PATH,
+        VALIDATION_CHESSEVAL_PATH,
+        train_set_size,
+        validation_set_size,
+    )
+    .await?;
+
+    println!("done");
+
+    Ok(())
+}
