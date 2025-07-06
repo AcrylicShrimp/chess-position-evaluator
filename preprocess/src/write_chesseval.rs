@@ -48,7 +48,7 @@ pub async fn write_chesseval(
         .await?;
 
     // metadata: length (8 bytes unsigned integer)
-    file.write_u64_le(limit as u64).await?;
+    file.write_u64_le(processed.len() as u64).await?;
 
     for bytes in processed {
         file.write_all(&bytes).await?;
