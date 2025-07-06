@@ -1,5 +1,6 @@
 import itertools
 import os
+import signal
 import torch
 from livelossplot import PlotLosses
 from model import Model
@@ -27,6 +28,12 @@ class Trainer:
         self.device = device
         self.enable_amp = device.type != "cpu"
         self.model.to(self.device)
+
+        self.should_stop = False
+        signal.signal(signal.SIGINT, self.signal_handler)
+
+    def signal_handler(self, signum, frame):
+        self.should_stop = True
 
     def load_checkpoint(self, checkpoint_path: str):
         if not os.path.exists(checkpoint_path):
@@ -92,17 +99,35 @@ class Trainer:
                     mate_loss=avg_mate_loss,
                 )
 
+                if self.should_stop:
+                    torch.save(
+                        {
+                            "model": self.model.state_dict(),
+                            "optimizer": self.optimizer.state_dict(),
+                            "scheduler": self.scheduler.state_dict(),
+                            "grad_scaler": self.grad_scaler.state_dict(),
+                        },
+                        checkpoint_path,
+                    )
+                    del data_loader._iterator
+                    print("[!] Stopping training (Ctrl+C pressed)")
+                    exit(0)
+
             torch.save(
                 {
                     "model": self.model.state_dict(),
                     "optimizer": self.optimizer.state_dict(),
                     "scheduler": self.scheduler.state_dict(),
                     "grad_scaler": self.grad_scaler.state_dict(),
-                    "epoch": epoch,
                 },
                 checkpoint_path,
             )
             print(f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
+
+            if self.should_stop:
+                del data_loader._iterator
+                print("[!] Stopping training (Ctrl+C pressed)")
+                exit(0)
 
             if loss_plot is not None:
                 loss_plot.update(

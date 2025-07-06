@@ -24,6 +24,7 @@ def main():
         shuffle=True,
         num_workers=2,
         pin_memory=True,
+        persistent_workers=True,
         worker_init_fn=worker_init_fn,
     )
     print(f"[✓] Data loaded from {train_data_path} ({len(train_data)} rows)")
