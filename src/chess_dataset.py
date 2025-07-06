@@ -16,8 +16,6 @@ class ChessDataset(torch.utils.data.Dataset):
         with open(path, "rb") as file:
             self.len = read_chess_evaluation_length(file)
 
-        print(f"[✓] Using {self.len} rows total")
-
     def open_file(self):
         self.mm = np.memmap(self.path, dtype=np.uint8, offset=8, mode="r")
 

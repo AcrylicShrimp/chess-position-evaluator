@@ -1,90 +1,120 @@
 import itertools
+import os
 import torch
 from livelossplot import PlotLosses
 from model import Model
 from tqdm import tqdm
 
 
-def train(
-    model: Model,
-    data_loader: torch.utils.data.DataLoader,
-    checkpoint_path: str,
-    epochs: int,
-    steps_per_epoch: int = 512,
-    loss_plot: PlotLosses | None = None,
-):
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-    elif torch.backends.mps.is_available():
-        device = torch.device("mps")
-    else:
-        device = torch.device("cpu")
-
-    print(f"[✓] Using device: {device}")
-
-    model.to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10)
-    grad_scaler = torch.amp.GradScaler()
-    enable_amp = device.type != "cpu"
-
-    for epoch in range(epochs):
-        pbar = tqdm(
-            itertools.islice(data_loader, steps_per_epoch),
-            total=steps_per_epoch,
-            desc=f"Epoch {epoch + 1}/{epochs}",
-            unit="step",
+class Trainer:
+    def __init__(self, model: Model):
+        self.model = model
+        self.optimizer = torch.optim.AdamW(
+            model.parameters(), lr=0.001, weight_decay=1e-4
         )
-        loss_acc = 0.0
-        cp_loss_acc = 0.0
-        mate_loss_acc = 0.0
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            self.optimizer, T_max=10
+        )
+        self.grad_scaler = torch.amp.GradScaler()
 
-        for step, (input, label) in enumerate(pbar):
-            input = input.to(device)
-            label = label.to(device)
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+        elif torch.backends.mps.is_available():
+            device = torch.device("mps")
+        else:
+            device = torch.device("cpu")
 
-            optimizer.zero_grad(set_to_none=True)
+        self.device = device
+        self.enable_amp = device.type != "cpu"
+        self.model.to(self.device)
 
-            with torch.autocast(device_type=device.type, enabled=enable_amp):
-                output = model(input)
-                loss, cp_loss, mate_loss = compute_loss(output, label)
+    def load_checkpoint(self, checkpoint_path: str):
+        if not os.path.exists(checkpoint_path):
+            return
 
-            if enable_amp:
-                grad_scaler.scale(loss).backward()
-                grad_scaler.step(optimizer)
-                grad_scaler.update()
-            else:
-                loss.backward()
-                optimizer.step()
+        checkpoint = torch.load(checkpoint_path)
+        self.model.load_state_dict(checkpoint["model"])
+        self.optimizer.load_state_dict(checkpoint["optimizer"])
+        self.scheduler.load_state_dict(checkpoint["scheduler"])
+        self.grad_scaler.load_state_dict(checkpoint["grad_scaler"])
+        print(f"[✓] Loaded checkpoint from {checkpoint_path}")
 
-            loss_acc += loss.item()
-            cp_loss_acc += cp_loss.item()
-            mate_loss_acc += mate_loss.item()
-
-            avg_loss = loss_acc / (step + 1)
-            avg_cp_loss = cp_loss_acc / (step + 1)
-            avg_mate_loss = mate_loss_acc / (step + 1)
-
-            pbar.set_postfix(
-                loss=avg_loss,
-                cp_loss=avg_cp_loss,
-                mate_loss=avg_mate_loss,
+    def train(
+        self,
+        checkpoint_path: str,
+        data_loader: torch.utils.data.DataLoader,
+        epochs: int,
+        steps_per_epoch: int = 512,
+        loss_plot: PlotLosses | None = None,
+    ):
+        for epoch in range(epochs):
+            pbar = tqdm(
+                itertools.islice(data_loader, steps_per_epoch),
+                total=steps_per_epoch,
+                desc=f"Epoch {epoch + 1}/{epochs}",
+                unit="step",
             )
+            loss_acc = 0.0
+            cp_loss_acc = 0.0
+            mate_loss_acc = 0.0
 
-        torch.save(model.state_dict(), checkpoint_path)
-        print(f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
+            for step, (input, label) in enumerate(pbar):
+                input = input.to(self.device)
+                label = label.to(self.device)
 
-        if loss_plot is not None:
-            loss_plot.update(
+                self.optimizer.zero_grad(set_to_none=True)
+
+                with torch.autocast(
+                    device_type=self.device.type, enabled=self.enable_amp
+                ):
+                    output = self.model(input)
+                    loss, cp_loss, mate_loss = compute_loss(output, label)
+
+                if self.enable_amp:
+                    self.grad_scaler.scale(loss).backward()
+                    self.grad_scaler.step(self.optimizer)
+                    self.grad_scaler.update()
+                else:
+                    loss.backward()
+                    self.optimizer.step()
+
+                loss_acc += loss.item()
+                cp_loss_acc += cp_loss.item()
+                mate_loss_acc += mate_loss.item()
+
+                avg_loss = loss_acc / (step + 1)
+                avg_cp_loss = cp_loss_acc / (step + 1)
+                avg_mate_loss = mate_loss_acc / (step + 1)
+
+                pbar.set_postfix(
+                    loss=avg_loss,
+                    cp_loss=avg_cp_loss,
+                    mate_loss=avg_mate_loss,
+                )
+
+            torch.save(
                 {
-                    "loss": avg_loss,
-                    "cp_loss": avg_cp_loss,
-                    "mate_loss": avg_mate_loss,
-                }
+                    "model": self.model.state_dict(),
+                    "optimizer": self.optimizer.state_dict(),
+                    "scheduler": self.scheduler.state_dict(),
+                    "grad_scaler": self.grad_scaler.state_dict(),
+                    "epoch": epoch,
+                },
+                checkpoint_path,
             )
-            loss_plot.send()
+            print(f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
 
-        scheduler.step()
+            if loss_plot is not None:
+                loss_plot.update(
+                    {
+                        "loss": avg_loss,
+                        "cp_loss": avg_cp_loss,
+                        "mate_loss": avg_mate_loss,
+                    }
+                )
+                loss_plot.send()
+
+            self.scheduler.step()
 
 
 def compute_loss(

@@ -1,8 +1,7 @@
-import os
 import torch
 from model import Model
 from chess_dataset import ChessDataset, worker_init_fn
-from train import train
+from train import Trainer
 
 
 def main():
@@ -13,10 +12,8 @@ def main():
     steps_per_epoch = 1024
 
     model = Model()
-
-    if os.path.exists(checkpoint_path):
-        model.load_state_dict(torch.load(checkpoint_path))
-        print(f"[✓] Loaded model from {checkpoint_path}")
+    trainer = Trainer(model)
+    trainer.load_checkpoint(checkpoint_path)
 
     train_data = ChessDataset(
         train_data_path,
@@ -29,13 +26,12 @@ def main():
         pin_memory=True,
         worker_init_fn=worker_init_fn,
     )
-    print(f"[✓] Data loaded from {train_data_path}")
+    print(f"[✓] Data loaded from {train_data_path} ({len(train_data)} rows)")
 
     while True:
-        train(
-            model,
-            data_loader,
+        trainer.train(
             checkpoint_path,
+            data_loader,
             epochs=epochs,
             steps_per_epoch=steps_per_epoch,
         )
