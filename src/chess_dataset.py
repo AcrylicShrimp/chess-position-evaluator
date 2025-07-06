@@ -1,5 +1,6 @@
-from chess_evaluation_reader import read_chess_evaluation, read_chess_evaluation_length
+import numpy as np
 import torch
+from chess_evaluation_reader import read_chess_evaluation, read_chess_evaluation_length
 
 
 def worker_init_fn(_: int):
@@ -10,7 +11,7 @@ def worker_init_fn(_: int):
 class ChessDataset(torch.utils.data.Dataset):
     def __init__(self, path: str):
         self.path = path
-        self.file = None
+        self.mm = None
 
         with open(path, "rb") as file:
             self.len = read_chess_evaluation_length(file)
@@ -18,10 +19,11 @@ class ChessDataset(torch.utils.data.Dataset):
         print(f"[✓] Using {self.len} rows total")
 
     def open_file(self):
-        self.file = open(self.path, "rb")
+        self.mm = np.memmap(self.path, dtype=np.uint8, offset=8, mode="r")
 
     def __len__(self) -> int:
         return self.len
 
     def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor]:
-        return read_chess_evaluation(self.file, index)
+        row = self.mm[index * 126 : (index + 1) * 126]
+        return read_chess_evaluation(row)

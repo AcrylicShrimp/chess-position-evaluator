@@ -10,18 +10,12 @@ def read_chess_evaluation_length(file: BinaryIO) -> int:
 
 
 def read_chess_evaluation(
-    file: BinaryIO, index: int
+    row: np.ndarray,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    # 1. locate the row
-    file.seek(8 + 126 * index)
-
-    # 2. read 126 bytes and parse the input
-    data = file.read(126)
     (bitflags, player_en_passant, white_attacks, black_attacks, *pieces, cp, mate) = (
-        struct.unpack("<BQQQ12QfB", data)
+        struct.unpack("<BQQQ12QfB", row)
     )
 
-    # 3. parse the input
     is_white_turn = bitflags & 1 == 1
     has_white_kingside_castling_rights = bitflags & 2 == 2
     has_white_queenside_castling_rights = bitflags & 4 == 4
