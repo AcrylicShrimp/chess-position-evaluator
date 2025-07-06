@@ -68,10 +68,10 @@ def boolean2tensor(boolean: bool) -> torch.Tensor:
 
 
 def bitboard2tensor(bitboard: int) -> torch.Tensor:
-    unpacked = np.unpackbits(np.array([bitboard], dtype=">u8").view(np.uint8))
+    unpacked = np.unpackbits(np.array([bitboard], dtype="<u8").view(np.uint8))
     return torch.from_numpy(unpacked).view(1, 8, 8).float()
 
 
 def bitboard2tensor_pieces(bitboards: list[int]) -> torch.Tensor:
-    unpacked = np.unpackbits(np.array(bitboards, dtype=">u8").view(np.uint8))
+    unpacked = np.unpackbits(np.array(bitboards, dtype="<u8").view(np.uint8))
     return torch.from_numpy(unpacked).view(6, 8, 8).float()
