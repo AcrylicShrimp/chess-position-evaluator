@@ -1,12 +1,12 @@
 import os
 import torch
 from model import Model
-from prepare_train_data import TrainData, worker_init_fn
+from chess_dataset import ChessDataset, worker_init_fn
 from train import train
 
 
 def main():
-    train_data_path = "lichess_db_eval.duckdb"
+    train_data_path = "train.chesseval"
     checkpoint_path = "model.pth"
     batch_size = 128
     epochs = 10
@@ -18,7 +18,7 @@ def main():
         model.load_state_dict(torch.load(checkpoint_path))
         print(f"[✓] Loaded model from {checkpoint_path}")
 
-    train_data = TrainData(
+    train_data = ChessDataset(
         train_data_path,
     )
     data_loader = torch.utils.data.DataLoader(
