@@ -47,10 +47,12 @@ pub async fn write_chesseval(
         .open(path)
         .await?;
 
-    // metadata: length (8 bytes unsigned integer)
-    file.write_u64_le(processed.len() as u64).await?;
+    let total_row_count: usize = processed.iter().map(|(row_count, _)| row_count).sum();
 
-    for bytes in processed {
+    // metadata: length (8 bytes unsigned integer)
+    file.write_u64_le(total_row_count as u64).await?;
+
+    for (_, bytes) in processed {
         file.write_all(&bytes).await?;
     }
 
@@ -61,7 +63,7 @@ fn process_chunk(
     chunk_size: usize,
     chunk_offset: i64,
     duckdb_temp_path: impl AsRef<Path>,
-) -> Result<Vec<u8>, anyhow::Error> {
+) -> Result<(usize, Vec<u8>), anyhow::Error> {
     let conn = Connection::open_with_flags(
         duckdb_temp_path,
         Config::default().access_mode(AccessMode::ReadOnly).unwrap(),
@@ -78,7 +80,8 @@ fn process_chunk(
     Ok(construct_chunk(chunk))
 }
 
-fn construct_chunk(chunk: Vec<ChessEvaluationRow>) -> Vec<u8> {
+fn construct_chunk(chunk: Vec<ChessEvaluationRow>) -> (usize, Vec<u8>) {
+    let mut row_count = 0;
     let mut bytes = Vec::with_capacity((121 + 5) * chunk.len());
 
     for row in chunk {
@@ -117,9 +120,11 @@ fn construct_chunk(chunk: Vec<ChessEvaluationRow>) -> Vec<u8> {
 
         bytes.extend(cp.to_le_bytes());
         bytes.extend(mate.to_le_bytes());
+
+        row_count += 1;
     }
 
-    bytes
+    (row_count, bytes)
 }
 
 fn compute_bitflags(board: &Board) -> u8 {
