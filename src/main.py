@@ -1,3 +1,4 @@
+import os
 import torch
 from model import Model
 from chess_dataset import ChessDataset, worker_init_fn
@@ -8,9 +9,15 @@ def main():
     train_data_path = "train.chesseval"
     validation_data_path = "validation.chesseval"
     checkpoint_path = "model.pth"
+    best_checkpoint_path = "best_model.pth"
     batch_size = 512
     epochs = 100
     steps_per_epoch = 4096
+
+    if os.environ.get("CHECKPOINT_PATH"):
+        checkpoint_path = os.environ.get("CHECKPOINT_PATH")
+    if os.environ.get("BEST_CHECKPOINT_PATH"):
+        best_checkpoint_path = os.environ.get("BEST_CHECKPOINT_PATH")
 
     model = Model()
     trainer = Trainer(model)
@@ -48,6 +55,7 @@ def main():
     while True:
         trainer.train(
             checkpoint_path,
+            best_checkpoint_path,
             train_data_loader,
             validation_data_loader,
             epochs=epochs,

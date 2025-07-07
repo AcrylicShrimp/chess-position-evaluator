@@ -32,6 +32,8 @@ class Trainer:
         self.should_stop = False
         signal.signal(signal.SIGINT, self.signal_handler)
 
+        self.best_validation_loss = float("inf")
+
     def signal_handler(self, signum, frame):
         self.should_stop = True
 
@@ -44,11 +46,28 @@ class Trainer:
         self.optimizer.load_state_dict(checkpoint["optimizer"])
         self.scheduler.load_state_dict(checkpoint["scheduler"])
         self.grad_scaler.load_state_dict(checkpoint["grad_scaler"])
+
+        if "best_validation_loss" in checkpoint:
+            self.best_validation_loss = checkpoint["best_validation_loss"]
+
         print(f"[✓] Loaded checkpoint from {checkpoint_path}")
+
+    def save_checkpoint(self, checkpoint_path: str):
+        torch.save(
+            {
+                "model": self.model.state_dict(),
+                "optimizer": self.optimizer.state_dict(),
+                "scheduler": self.scheduler.state_dict(),
+                "grad_scaler": self.grad_scaler.state_dict(),
+                "best_validation_loss": self.best_validation_loss,
+            },
+            checkpoint_path,
+        )
 
     def train(
         self,
         checkpoint_path: str,
+        best_checkpoint_path: str,
         train_data_loader: torch.utils.data.DataLoader,
         validation_data_loader: torch.utils.data.DataLoader,
         epochs: int,
@@ -56,6 +75,8 @@ class Trainer:
         loss_plot: PlotLosses | None = None,
     ):
         for epoch in range(epochs):
+            self.model.train()
+
             pbar: tqdm[tuple[torch.Tensor, torch.Tensor]] = tqdm(
                 itertools.islice(train_data_loader, steps_per_epoch),
                 total=steps_per_epoch,
@@ -101,36 +122,14 @@ class Trainer:
                 )
 
                 if self.should_stop:
-                    torch.save(
-                        {
-                            "model": self.model.state_dict(),
-                            "optimizer": self.optimizer.state_dict(),
-                            "scheduler": self.scheduler.state_dict(),
-                            "grad_scaler": self.grad_scaler.state_dict(),
-                        },
-                        checkpoint_path,
-                    )
+                    self.save_checkpoint(checkpoint_path)
                     del train_data_loader._iterator
                     del validation_data_loader._iterator
                     print("[!] Stopping training (Ctrl+C pressed)")
                     exit(0)
 
-            torch.save(
-                {
-                    "model": self.model.state_dict(),
-                    "optimizer": self.optimizer.state_dict(),
-                    "scheduler": self.scheduler.state_dict(),
-                    "grad_scaler": self.grad_scaler.state_dict(),
-                },
-                checkpoint_path,
-            )
+            self.save_checkpoint(checkpoint_path)
             print(f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
-
-            if self.should_stop:
-                del train_data_loader._iterator
-                del validation_data_loader._iterator
-                print("[!] Stopping training (Ctrl+C pressed)")
-                exit(0)
 
             if loss_plot is not None:
                 loss_plot.update(
@@ -143,11 +142,12 @@ class Trainer:
                 loss_plot.send()
 
             self.scheduler.step()
+            self.model.eval()
 
             validation_loss_acc = 0.0
             validation_cp_loss_acc = 0.0
             validation_mate_loss_acc = 0.0
-            validation_steps = min(steps_per_epoch // 10, 1)
+            validation_steps = max(steps_per_epoch // 10, 1)
 
             for input, label in itertools.islice(
                 validation_data_loader, validation_steps
@@ -170,6 +170,13 @@ class Trainer:
             print(
                 f"[✓] Validation Loss: {avg_validation_loss:.4f} — CP Loss: {avg_validation_cp_loss:.4f} — Mate Loss: {avg_validation_mate_loss:.4f}"
             )
+
+            if avg_validation_loss < self.best_validation_loss:
+                self.best_validation_loss = avg_validation_loss
+                self.save_checkpoint(best_checkpoint_path)
+                print(
+                    f"[🎉] New best validation loss: {self.best_validation_loss:.4f} (saved to {best_checkpoint_path})"
+                )
 
 
 def compute_loss(
