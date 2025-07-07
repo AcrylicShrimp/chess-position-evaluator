@@ -11,7 +11,7 @@ class Trainer:
     def __init__(self, model: Model):
         self.model = model
         self.optimizer = torch.optim.AdamW(
-            model.parameters(), lr=0.001, weight_decay=1e-4
+            model.parameters(), lr=1e-4, weight_decay=1e-4
         )
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer, T_max=10
