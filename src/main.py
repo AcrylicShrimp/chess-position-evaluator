@@ -42,7 +42,7 @@ def main():
     validation_data_loader = torch.utils.data.DataLoader(
         validation_data,
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=False,
         num_workers=2,
         pin_memory=True,
         persistent_workers=True,
