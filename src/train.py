@@ -2,8 +2,8 @@ import itertools
 import os
 import signal
 import torch
-from livelossplot import PlotLosses
 from model import Model
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 
@@ -33,6 +33,7 @@ class Trainer:
         signal.signal(signal.SIGINT, self.signal_handler)
 
         self.best_validation_loss = float("inf")
+        self.epoch = 0
 
     def signal_handler(self, signum, frame):
         self.should_stop = True
@@ -50,9 +51,12 @@ class Trainer:
         if "best_validation_loss" in checkpoint:
             self.best_validation_loss = checkpoint["best_validation_loss"]
 
+        if "epoch" in checkpoint:
+            self.epoch = checkpoint["epoch"]
+
         print(f"[✓] Loaded checkpoint from {checkpoint_path}")
 
-    def save_checkpoint(self, checkpoint_path: str):
+    def save_checkpoint(self, checkpoint_path: str, epoch: int):
         torch.save(
             {
                 "model": self.model.state_dict(),
@@ -60,6 +64,7 @@ class Trainer:
                 "scheduler": self.scheduler.state_dict(),
                 "grad_scaler": self.grad_scaler.state_dict(),
                 "best_validation_loss": self.best_validation_loss,
+                "epoch": epoch,
             },
             checkpoint_path,
         )
@@ -70,13 +75,13 @@ class Trainer:
         best_checkpoint_path: str,
         train_data_loader: torch.utils.data.DataLoader,
         validation_data_loader: torch.utils.data.DataLoader,
+        writer: SummaryWriter,
         epochs: int,
         steps_per_epoch: int = 512,
-        loss_plot: PlotLosses | None = None,
     ):
         torch.set_float32_matmul_precision("high")
 
-        for epoch in range(epochs):
+        for epoch in range(self.epoch, epochs):
             self.model.train()
 
             pbar: tqdm[tuple[torch.Tensor, torch.Tensor]] = tqdm(
@@ -109,13 +114,22 @@ class Trainer:
                     loss.backward()
                     self.optimizer.step()
 
-                loss_acc += loss.item()
-                cp_loss_acc += cp_loss.item()
-                mate_loss_acc += mate_loss.item()
+                loss = loss.item()
+                cp_loss = cp_loss.item()
+                mate_loss = mate_loss.item()
+
+                loss_acc += loss
+                cp_loss_acc += cp_loss
+                mate_loss_acc += mate_loss
 
                 avg_loss = loss_acc / (step + 1)
                 avg_cp_loss = cp_loss_acc / (step + 1)
                 avg_mate_loss = mate_loss_acc / (step + 1)
+
+                global_step = epoch * steps_per_epoch + step
+                writer.add_scalar("Loss/train", loss, global_step)
+                writer.add_scalar("CP Loss/train", cp_loss, global_step)
+                writer.add_scalar("Mate Loss/train", mate_loss, global_step)
 
                 pbar.set_postfix(
                     loss=avg_loss,
@@ -124,24 +138,17 @@ class Trainer:
                 )
 
                 if self.should_stop:
-                    self.save_checkpoint(checkpoint_path)
+                    self.save_checkpoint(checkpoint_path, epoch)
                     del train_data_loader._iterator
                     del validation_data_loader._iterator
                     print("[!] Stopping training (Ctrl+C pressed)")
                     exit(0)
 
-            self.save_checkpoint(checkpoint_path)
+            self.save_checkpoint(
+                checkpoint_path,
+                epoch,
+            )
             print(f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
-
-            if loss_plot is not None:
-                loss_plot.update(
-                    {
-                        "loss": avg_loss,
-                        "cp_loss": avg_cp_loss,
-                        "mate_loss": avg_mate_loss,
-                    }
-                )
-                loss_plot.send()
 
             self.scheduler.step()
             self.model.eval()
@@ -151,8 +158,8 @@ class Trainer:
             validation_mate_loss_acc = 0.0
             validation_steps = max(steps_per_epoch // 10, 1)
 
-            for input, label in itertools.islice(
-                validation_data_loader, validation_steps
+            for step, (input, label) in enumerate(
+                itertools.islice(validation_data_loader, validation_steps)
             ):
                 with torch.no_grad():
                     input = input.to(self.device)
@@ -161,9 +168,18 @@ class Trainer:
                     output = self.model(input)
                     loss, cp_loss, mate_loss = compute_loss(output, label)
 
-                    validation_loss_acc += loss.item()
-                    validation_cp_loss_acc += cp_loss.item()
-                    validation_mate_loss_acc += mate_loss.item()
+                    loss = loss.item()
+                    cp_loss = cp_loss.item()
+                    mate_loss = mate_loss.item()
+
+                    validation_loss_acc += loss
+                    validation_cp_loss_acc += cp_loss
+                    validation_mate_loss_acc += mate_loss
+
+                    global_step = epoch * validation_steps + step
+                    writer.add_scalar("Loss/validation", loss, global_step)
+                    writer.add_scalar("CP Loss/validation", cp_loss, global_step)
+                    writer.add_scalar("Mate Loss/validation", mate_loss, global_step)
 
             avg_validation_loss = validation_loss_acc / validation_steps
             avg_validation_cp_loss = validation_cp_loss_acc / validation_steps
@@ -175,10 +191,18 @@ class Trainer:
 
             if avg_validation_loss < self.best_validation_loss:
                 self.best_validation_loss = avg_validation_loss
-                self.save_checkpoint(best_checkpoint_path)
+                self.save_checkpoint(best_checkpoint_path, epoch + 1)
                 print(
                     f"[🎉] New best validation loss: {self.best_validation_loss:.4f} (saved to {best_checkpoint_path})"
                 )
+
+                writer.add_scalar(
+                    "Best Validation Loss",
+                    self.best_validation_loss,
+                    (epoch + 1) * steps_per_epoch,
+                )
+
+            writer.flush()
 
 
 def compute_loss(
