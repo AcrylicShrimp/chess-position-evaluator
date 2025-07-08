@@ -19,8 +19,17 @@ def main():
     if os.environ.get("BEST_CHECKPOINT_PATH"):
         best_checkpoint_path = os.environ.get("BEST_CHECKPOINT_PATH")
 
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
+
+    print(f"[✓] Using device: {device}")
+
     model = Model()
-    trainer = Trainer(model)
+    trainer = Trainer(model, device)
     trainer.load_checkpoint(checkpoint_path)
 
     train_data = ChessDataset(

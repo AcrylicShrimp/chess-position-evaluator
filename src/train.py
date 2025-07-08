@@ -8,8 +8,11 @@ from tqdm import tqdm
 
 
 class Trainer:
-    def __init__(self, model: Model):
+    def __init__(self, model: Model, device: torch.device):
         self.model = model
+        self.device = device
+        self.enable_amp = device.type != "cpu"
+
         self.optimizer = torch.optim.AdamW(
             model.parameters(), lr=1e-4, weight_decay=1e-4
         )
@@ -18,16 +21,13 @@ class Trainer:
         )
         self.grad_scaler = torch.amp.GradScaler()
 
-        if torch.cuda.is_available():
-            device = torch.device("cuda")
-        elif torch.backends.mps.is_available():
-            device = torch.device("mps")
-        else:
-            device = torch.device("cpu")
-
-        self.device = device
-        self.enable_amp = device.type != "cpu"
         self.model.to(self.device)
+
+        if self.device.type == "cuda":
+            self.model.compile()
+            print(f"[✓] Model compiled (cuda)")
+        else:
+            print("[!] Model will not be compiled; no cuda device found")
 
         self.should_stop = False
         signal.signal(signal.SIGINT, self.signal_handler)
