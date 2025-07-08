@@ -74,6 +74,8 @@ class Trainer:
         steps_per_epoch: int = 512,
         loss_plot: PlotLosses | None = None,
     ):
+        torch.set_float32_matmul_precision("high")
+
         for epoch in range(epochs):
             self.model.train()
 
