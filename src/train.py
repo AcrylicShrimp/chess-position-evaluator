@@ -2,13 +2,16 @@ import itertools
 import os
 import signal
 import torch
+from focal_loss import FocalLoss
 from model import Model
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 
 class Trainer:
-    def __init__(self, model: Model, device: torch.device):
+    def __init__(
+        self, model: Model, device: torch.device, mate_class_weights: list[float]
+    ):
         self.model = model
         self.device = device
         self.enable_amp = device.type != "cpu"
@@ -20,6 +23,7 @@ class Trainer:
             self.optimizer, T_max=10
         )
         self.grad_scaler = torch.amp.GradScaler()
+        self.focal_loss = FocalLoss(alpha=torch.tensor(mate_class_weights))
 
         self.model.to(self.device)
 
@@ -104,7 +108,7 @@ class Trainer:
                     device_type=self.device.type, enabled=self.enable_amp
                 ):
                     output = self.model(input)
-                    loss, cp_loss, mate_loss = compute_loss(output, label)
+                    loss, cp_loss, mate_loss = self.compute_loss(output, label)
 
                 if self.enable_amp:
                     self.grad_scaler.scale(loss).backward()
@@ -166,7 +170,7 @@ class Trainer:
                     label = label.to(self.device)
 
                     output = self.model(input)
-                    loss, cp_loss, mate_loss = compute_loss(output, label)
+                    loss, cp_loss, mate_loss = self.compute_loss(output, label)
 
                     loss = loss.item()
                     cp_loss = cp_loss.item()
@@ -204,18 +208,17 @@ class Trainer:
 
             writer.flush()
 
+    def compute_loss(
+        self, output: torch.Tensor, labels: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        cp_output = output[:, 0]
+        mate_output = output[:, 1:]
 
-def compute_loss(
-    output: torch.Tensor, labels: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    cp_output = output[:, 0]
-    mate_output = output[:, 1:]
+        cp_label = labels[:, 0]
+        mate_label = labels[:, 1].long()
 
-    cp_label = labels[:, 0]
-    mate_label = labels[:, 1].long()
+        cp_loss = torch.nn.functional.mse_loss(cp_output, cp_label)
+        mate_loss = self.focal_loss(mate_output, mate_label)
+        loss = cp_loss + 0.5 * mate_loss
 
-    cp_loss = torch.nn.functional.mse_loss(cp_output, cp_label)
-    mate_loss = torch.nn.functional.cross_entropy(mate_output, mate_label)
-    loss = cp_loss + 0.5 * mate_loss
-
-    return loss, cp_loss, mate_loss
+        return loss, cp_loss, mate_loss
