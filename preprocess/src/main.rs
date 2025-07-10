@@ -31,7 +31,7 @@ async fn main() -> Result<(), anyhow::Error> {
     conn.prepare(
         "
         CREATE TABLE rows AS (
-            SELECT fen, pvs.cp as cp
+            SELECT fen, pvs.cp as cp, pvs.mate as mate
             FROM (
                 SELECT fen, list_extract(eval.pvs, 1) as pvs
                 FROM (
@@ -40,7 +40,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 )
                 WHERE 10 <= eval.depth AND array_length(eval.pvs) != 0
             )
-            WHERE (pvs.cp IS NOT NULL AND 100 <= ABS(pvs.cp)) OR (pvs.mate IS NOT NULL)
+            WHERE (pvs.cp IS NOT NULL AND 100 <= ABS(pvs.cp)) OR (pvs.mate IS NOT NULL AND ABS(pvs.mate) <= 3)
             ORDER BY RANDOM()
         )
         ",

@@ -10,12 +10,14 @@ use tokio::fs::OpenOptions;
 struct ChessEvaluationRow {
     fen: String,
     cp: Option<i32>,
+    mate: Option<i32>,
 }
 
 fn extract_chess_evaluation_row(row: &Row) -> Result<ChessEvaluationRow, anyhow::Error> {
     let fen = row.get::<_, String>(0)?;
     let cp = row.get::<_, Option<i32>>(1)?;
-    Ok(ChessEvaluationRow { fen, cp })
+    let mate = row.get::<_, Option<i32>>(2)?;
+    Ok(ChessEvaluationRow { fen, cp, mate })
 }
 
 pub async fn write_chesseval(
@@ -69,7 +71,7 @@ fn process_chunk(
         Config::default().access_mode(AccessMode::ReadOnly).unwrap(),
     )?;
 
-    let mut stmt = conn.prepare("SELECT fen, cp FROM rows OFFSET ?1 LIMIT ?2")?;
+    let mut stmt = conn.prepare("SELECT fen, cp, mate FROM rows OFFSET ?1 LIMIT ?2")?;
     let chunk = stmt
         .query_and_then(
             params![chunk_offset, chunk_size],
@@ -110,12 +112,23 @@ fn construct_chunk(chunk: Vec<ChessEvaluationRow>) -> (usize, Vec<u8>) {
         }
 
         // label: 5 bytes
-        let (cp, mate) = if let Some(cp) = row.cp {
-            ((cp as f32 * 0.01).clamp(-20.0, 20.0), 0u8)
-        } else if board.side_to_move() == Color::White {
-            (20f32, 1u8)
-        } else {
-            (-20f32, 2u8)
+        let (cp, mate) = match (row.cp, row.mate) {
+            (Some(cp), None) => ((cp as f32 * 0.01).clamp(-20.0, 20.0), 0u8),
+            (None, Some(mate)) => {
+                let cp_norm = match mate.abs() {
+                    1 => 50f32,
+                    2 => 40f32,
+                    _ => 30f32,
+                };
+
+                (
+                    cp_norm * mate.signum() as f32,
+                    if 0 < mate { 1u8 } else { 2u8 },
+                )
+            }
+            _ => {
+                continue;
+            }
         };
 
         bytes.extend(cp.to_le_bytes());

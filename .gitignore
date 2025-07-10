@@ -3,7 +3,7 @@ lichess_db_eval*.parquet
 lichess_db_eval*.duckdb
 tensorboard/
 *.chesseval
-model.pth
+*.pth
 log*.txt
 
 # Byte-compiled / optimized / DLL files
