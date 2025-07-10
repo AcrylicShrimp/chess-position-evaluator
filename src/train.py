@@ -160,6 +160,7 @@ class Trainer:
             validation_loss_acc = 0.0
             validation_cp_loss_acc = 0.0
             validation_mate_loss_acc = 0.0
+            validation_mate_confusion_matrix = torch.zeros(9)
             validation_steps = max(steps_per_epoch // 10, 1)
 
             for step, (input, label) in enumerate(
@@ -171,6 +172,10 @@ class Trainer:
 
                     output = self.model(input)
                     loss, cp_loss, mate_loss = self.compute_loss(output, label)
+
+                    validation_mate_confusion_matrix += compute_mate_confusion_matrix(
+                        output, label
+                    )
 
                     loss = loss.item()
                     cp_loss = cp_loss.item()
@@ -192,6 +197,8 @@ class Trainer:
             print(
                 f"[✓] Validation Loss: {avg_validation_loss:.4f} — CP Loss: {avg_validation_cp_loss:.4f} — Mate Loss: {avg_validation_mate_loss:.4f}"
             )
+
+            visualize_confusion_matrix(validation_mate_confusion_matrix)
 
             if avg_validation_loss < self.best_validation_loss:
                 self.best_validation_loss = avg_validation_loss
@@ -222,3 +229,36 @@ class Trainer:
         loss = cp_loss + 0.5 * mate_loss
 
         return loss, cp_loss, mate_loss
+
+
+def compute_mate_confusion_matrix(
+    output: torch.Tensor, labels: torch.Tensor
+) -> torch.Tensor:
+    mate_output = output[:, 1:].cpu().argmax(dim=1)
+    mate_label = labels[:, 1].long().cpu()
+    return torch.bincount(mate_output * 3 + mate_label, minlength=9)
+
+
+def visualize_confusion_matrix(confusion_matrix: torch.Tensor):
+    confusion_matrix = confusion_matrix.reshape(3, 3)
+
+    accuracy = confusion_matrix.diag().sum() / confusion_matrix.sum()
+    precision = confusion_matrix.diag() / confusion_matrix.sum(axis=0)
+    recall = confusion_matrix.diag() / confusion_matrix.sum(axis=1)
+    f1_score = 2 * (precision * recall) / (precision + recall)
+
+    print(f"Accuracy: {accuracy.item():.4f}")
+    print(f"Precision: {precision.mean().item():.4f}")
+    print(f"Recall: {recall.mean().item():.4f}")
+    print(f"F1 Score: {f1_score.mean().item():.4f}")
+
+    max_value = confusion_matrix.max().long()
+    max_value_length = len(str(max_value))
+    lines = [
+        f"True: No    Mate | True: White Mate | True: Black Mate |",
+        f"Pred: No    Mate | {confusion_matrix[0, 0].long():>{max_value_length}} | {confusion_matrix[0, 1].long():>{max_value_length}} | {confusion_matrix[0, 2].long():>{max_value_length}} |",
+        f"Pred: White Mate | {confusion_matrix[1, 0].long():>{max_value_length}} | {confusion_matrix[1, 1].long():>{max_value_length}} | {confusion_matrix[1, 2].long():>{max_value_length}} |",
+        f"Pred: Black Mate | {confusion_matrix[2, 0].long():>{max_value_length}} | {confusion_matrix[2, 1].long():>{max_value_length}} | {confusion_matrix[2, 2].long():>{max_value_length}} |",
+    ]
+
+    print("\n".join(lines))
