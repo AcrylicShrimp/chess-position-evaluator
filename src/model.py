@@ -54,13 +54,6 @@ class Model(torch.nn.Module):
             torch.nn.ReLU(inplace=True),
             torch.nn.Linear(512, 1),
         )
-        self.mate_head = torch.nn.Sequential(
-            torch.nn.Linear(head_input_size, 1024),
-            torch.nn.ReLU(inplace=True),
-            torch.nn.Linear(1024, 512),
-            torch.nn.ReLU(inplace=True),
-            torch.nn.Linear(512, 3),
-        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = self.initial_block(x)
@@ -68,7 +61,4 @@ class Model(torch.nn.Module):
         out = self.gap(out)
         out = torch.flatten(out, 1)
 
-        cp_out = self.cp_head(out)
-        mate_out = self.mate_head(out)
-
-        return torch.cat([cp_out, mate_out], dim=1)
+        return self.cp_head(out)

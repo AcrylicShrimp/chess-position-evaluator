@@ -8,43 +8,18 @@ def main():
     clipped_count = conn.execute(
         "SELECT COUNT(*) FROM rows WHERE 2000 < ABS(cp)"
     ).fetchone()[0]
-    mate_count = conn.execute("SELECT COUNT(*) FROM rows WHERE cp IS NULL").fetchone()[
-        0
-    ]
     mean = conn.execute("SELECT AVG(cp) FROM rows WHERE cp IS NOT NULL").fetchone()[0]
     std = conn.execute("SELECT STDDEV(cp) FROM rows WHERE cp IS NOT NULL").fetchone()[0]
     min = conn.execute("SELECT MIN(cp) FROM rows WHERE cp IS NOT NULL").fetchone()[0]
     max = conn.execute("SELECT MAX(cp) FROM rows WHERE cp IS NOT NULL").fetchone()[0]
-    mate_mean = conn.execute(
-        "SELECT AVG(mate) FROM rows WHERE mate IS NOT NULL"
-    ).fetchone()[0]
-    mate_std = conn.execute(
-        "SELECT STDDEV(mate) FROM rows WHERE mate IS NOT NULL"
-    ).fetchone()[0]
-    mate_min = conn.execute(
-        "SELECT MIN(mate) FROM rows WHERE mate IS NOT NULL"
-    ).fetchone()[0]
-    mate_max = conn.execute(
-        "SELECT MAX(mate) FROM rows WHERE mate IS NOT NULL"
-    ).fetchone()[0]
-    count_mate_is_zero = conn.execute(
-        "SELECT COUNT(*) FROM rows WHERE mate = 0"
-    ).fetchone()[0]
 
     print("Total count", total_count)
     print("Clipped count", clipped_count)
     print(f"Clipped ratio {clipped_count / total_count * 100:.2f}%")
-    print("Mate count", mate_count)
-    print(f"Mate ratio {mate_count / total_count * 100:.2f}%")
     print("Cp Mean", mean)
     print("Cp Std", std)
     print("Cp Min", min)
     print("Cp Max", max)
-    print("Mate Mean", mate_mean)
-    print("Mate Std", mate_std)
-    print("Mate Min", mate_min)
-    print("Mate Max", mate_max)
-    print("Count mate is zero", count_mate_is_zero)
 
 
 if __name__ == "__main__":

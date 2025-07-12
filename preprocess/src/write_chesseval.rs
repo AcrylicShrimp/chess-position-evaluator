@@ -6,15 +6,13 @@ use tokio::fs::OpenOptions;
 
 struct ChessEvaluationRow {
     fen: String,
-    cp: Option<i32>,
-    mate: Option<i32>,
+    cp: i32,
 }
 
 fn extract_chess_evaluation_row(row: &Row) -> Result<ChessEvaluationRow, anyhow::Error> {
     let fen = row.get::<_, String>(0)?;
-    let cp = row.get::<_, Option<i32>>(1)?;
-    let mate = row.get::<_, Option<i32>>(2)?;
-    Ok(ChessEvaluationRow { fen, cp, mate })
+    let cp = row.get::<_, i32>(1)?;
+    Ok(ChessEvaluationRow { fen, cp })
 }
 
 pub async fn write_chesseval(
@@ -68,7 +66,7 @@ fn process_chunk(
         Config::default().access_mode(AccessMode::ReadOnly).unwrap(),
     )?;
 
-    let mut stmt = conn.prepare("SELECT fen, cp, mate FROM rows OFFSET ?1 LIMIT ?2")?;
+    let mut stmt = conn.prepare("SELECT fen, cp FROM rows OFFSET ?1 LIMIT ?2")?;
     let chunk = stmt
         .query_and_then(
             params![chunk_offset, chunk_size],
@@ -81,7 +79,7 @@ fn process_chunk(
 
 fn construct_chunk(chunk: Vec<ChessEvaluationRow>) -> (usize, Vec<u8>) {
     let mut row_count = 0;
-    let mut bytes = Vec::with_capacity((121 + 5) * chunk.len());
+    let mut bytes = Vec::with_capacity((121 + 4) * chunk.len());
 
     for row in chunk {
         let board = match Board::from_str(&row.fen) {
@@ -108,28 +106,9 @@ fn construct_chunk(chunk: Vec<ChessEvaluationRow>) -> (usize, Vec<u8>) {
             bytes.extend(piece.0.to_le_bytes());
         }
 
-        // label: 5 bytes
-        let (cp, mate) = match (row.cp, row.mate) {
-            (Some(cp), None) => ((cp as f32 * 0.01).clamp(-20.0, 20.0), 0u8),
-            (None, Some(mate)) => {
-                let cp_norm = match mate.abs() {
-                    1 => 50f32,
-                    2 => 40f32,
-                    _ => 30f32,
-                };
-
-                (
-                    cp_norm * mate.signum() as f32,
-                    if 0 < mate { 1u8 } else { 2u8 },
-                )
-            }
-            _ => {
-                continue;
-            }
-        };
-
+        // label: 4 bytes
+        let cp = (row.cp as f32 * 0.01).clamp(-20.0, 20.0);
         bytes.extend(cp.to_le_bytes());
-        bytes.extend(mate.to_le_bytes());
 
         row_count += 1;
     }

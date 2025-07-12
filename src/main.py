@@ -35,7 +35,7 @@ def main():
     print(f"[✓] Using device: {device}")
 
     model = Model()
-    trainer = Trainer(model, device, mate_class_weights=[0.02, 0.49, 0.49])
+    trainer = Trainer(model, device)
     trainer.load_checkpoint(checkpoint_path)
 
     train_data = ChessDataset(

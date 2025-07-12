@@ -10,11 +10,6 @@ const VALIDATION_SET_RATIO: f64 = 0.1;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    if tokio::fs::try_exists(DUCKDB_TEMP_PATH).await? {
-        println!("{} already exists; removing...", DUCKDB_TEMP_PATH);
-        tokio::fs::remove_file(DUCKDB_TEMP_PATH).await?;
-    }
-
     if tokio::fs::try_exists(TRAIN_CHESSEVAL_PATH).await? {
         println!("{} already exists; removing...", TRAIN_CHESSEVAL_PATH);
         tokio::fs::remove_file(TRAIN_CHESSEVAL_PATH).await?;
@@ -25,28 +20,9 @@ async fn main() -> Result<(), anyhow::Error> {
         tokio::fs::remove_file(VALIDATION_CHESSEVAL_PATH).await?;
     }
 
-    let conn = Connection::open("lichess_db_eval.duckdb.tmp")?;
+    create_temp_table(DUCKDB_TEMP_PATH, CHESS_EVALUATION_DB_PATH).await?;
 
-    // 1. create temp table with rows
-    conn.prepare(
-        "
-        CREATE TABLE rows AS (
-            SELECT fen, pvs.cp as cp, pvs.mate as mate
-            FROM (
-                SELECT fen, list_extract(eval.pvs, 1) as pvs
-                FROM (
-                    SELECT fen, unnest(evals) as eval
-                    FROM read_json_auto(?1)
-                )
-                WHERE 10 <= eval.depth AND array_length(eval.pvs) != 0
-            )
-            WHERE (pvs.cp IS NOT NULL AND 100 <= ABS(pvs.cp)) OR (pvs.mate IS NOT NULL AND ABS(pvs.mate) <= 3)
-            ORDER BY RANDOM()
-        )
-        ",
-    )?
-    .execute(params![CHESS_EVALUATION_DB_PATH])?;
-
+    let conn = Connection::open(DUCKDB_TEMP_PATH)?;
     let row_count = conn.query_row::<i64, _, _>("SELECT COUNT(*) FROM rows", params![], |row| {
         row.get::<_, i64>(0)
     })?;
@@ -75,6 +51,39 @@ async fn main() -> Result<(), anyhow::Error> {
     .await?;
 
     println!("done");
+
+    Ok(())
+}
+
+async fn create_temp_table(
+    path: &str,
+    chess_evaluation_db_path: &str,
+) -> Result<(), anyhow::Error> {
+    if tokio::fs::try_exists(path).await? {
+        println!("{} already exists; reusing...", path);
+        return Ok(());
+    }
+
+    let conn = Connection::open(path)?;
+
+    conn.prepare(
+        "
+        CREATE TABLE rows AS (
+            SELECT fen, pvs.cp as cp
+            FROM (
+                SELECT fen, list_extract(eval.pvs, 1) as pvs
+                FROM (
+                    SELECT fen, unnest(evals) as eval
+                    FROM read_json_auto(?1)
+                )
+                WHERE 10 <= eval.depth AND array_length(eval.pvs) != 0
+            )
+            WHERE pvs.cp IS NOT NULL AND 50 <= ABS(pvs.cp)
+            ORDER BY RANDOM()
+        )
+        ",
+    )?
+    .execute(params![chess_evaluation_db_path])?;
 
     Ok(())
 }

@@ -12,8 +12,8 @@ def read_chess_evaluation_length(file: BinaryIO) -> int:
 def read_chess_evaluation(
     row: np.ndarray,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    (bitflags, player_en_passant, white_attacks, black_attacks, *pieces, cp, mate) = (
-        struct.unpack("<BQQQ12QfB", row)
+    (bitflags, player_en_passant, white_attacks, black_attacks, *pieces, cp) = (
+        struct.unpack("<BQQQ12Qf", row)
     )
 
     turn = boolean2tensor(bitflags & 1 == 1)
@@ -43,7 +43,7 @@ def read_chess_evaluation(
     )
 
     # 5. create the label tensor
-    label = torch.tensor([cp, mate], dtype=torch.float32)
+    label = torch.tensor([cp], dtype=torch.float32)
 
     return input, label
 
