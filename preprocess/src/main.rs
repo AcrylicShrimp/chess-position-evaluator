@@ -68,7 +68,7 @@ async fn create_temp_table(
 
     conn.prepare(
         "
-        CREATE TABLE rows AS (
+        CREATE TABLE all_rows AS (
             SELECT fen, pvs.cp as cp
             FROM (
                 SELECT fen, list_extract(eval.pvs, 1) as pvs
@@ -78,12 +78,58 @@ async fn create_temp_table(
                 )
                 WHERE 10 <= eval.depth AND array_length(eval.pvs) != 0
             )
-            WHERE pvs.cp IS NOT NULL AND 50 <= ABS(pvs.cp)
+            WHERE pvs.cp IS NOT NULL AND 50 <= ABS(pvs.cp) AND ABS(pvs.cp) <= 2000
             ORDER BY RANDOM()
         )
         ",
     )?
     .execute(params![chess_evaluation_db_path])?;
+
+    let white_is_winning_count = conn.query_row::<i64, _, _>(
+        "SELECT COUNT(*) FROM all_rows WHERE cp > 0",
+        params![],
+        |row| row.get::<_, i64>(0),
+    )?;
+    let black_is_winning_count = conn.query_row::<i64, _, _>(
+        "SELECT COUNT(*) FROM all_rows WHERE cp < 0",
+        params![],
+        |row| row.get::<_, i64>(0),
+    )?;
+    let minimum = white_is_winning_count.min(black_is_winning_count);
+
+    conn.prepare(
+        "
+        CREATE TABLE white_wins AS (
+            SELECT fen, cp
+            FROM all_rows
+            WHERE cp > 0
+            ORDER BY RANDOM()
+        )
+        ",
+    )?
+    .execute(params![])?;
+    conn.prepare(
+        "
+        CREATE TABLE black_wins AS (
+            SELECT fen, cp
+            FROM all_rows
+            WHERE cp < 0
+            ORDER BY RANDOM()
+        )
+        ",
+    )?
+    .execute(params![])?;
+
+    conn.prepare(
+        "
+        CREATE TABLE rows AS (
+            (SELECT fen, cp FROM white_wins LIMIT ?1)
+            UNION ALL
+            (SELECT fen, cp FROM black_wins LIMIT ?1)
+        )
+        ",
+    )?
+    .execute(params![minimum])?;
 
     Ok(())
 }

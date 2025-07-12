@@ -138,10 +138,18 @@ def main():
             with torch.no_grad():
                 output = model(input_tensor)
                 cp_score = output[0, 0].item()
-                mate_logits = output[0, 1:].softmax(dim=0)
-
                 print(f"CP Score: {cp_score:.2f}")
-                print(f"Mate probabilities: {mate_logits}")
+
+                if 3 <= cp_score:
+                    print("White is winning")
+                elif 0.5 <= cp_score:
+                    print("White has a small advantage")
+                elif cp_score <= -0.5:
+                    print("Black has a small advantage")
+                elif cp_score <= -3:
+                    print("Black is winning")
+                else:
+                    print("Both sides are equal")
 
         except Exception as e:
             print(f"Error evaluating position: {e}")

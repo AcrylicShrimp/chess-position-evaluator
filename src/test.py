@@ -12,6 +12,12 @@ def main():
     std = conn.execute("SELECT STDDEV(cp) FROM rows WHERE cp IS NOT NULL").fetchone()[0]
     min = conn.execute("SELECT MIN(cp) FROM rows WHERE cp IS NOT NULL").fetchone()[0]
     max = conn.execute("SELECT MAX(cp) FROM rows WHERE cp IS NOT NULL").fetchone()[0]
+    white_is_winning_count = conn.execute(
+        "SELECT COUNT(*) FROM rows WHERE cp > 0"
+    ).fetchone()[0]
+    black_is_winning_count = conn.execute(
+        "SELECT COUNT(*) FROM rows WHERE cp < 0"
+    ).fetchone()[0]
 
     print("Total count", total_count)
     print("Clipped count", clipped_count)
@@ -20,6 +26,8 @@ def main():
     print("Cp Std", std)
     print("Cp Min", min)
     print("Cp Max", max)
+    print("White is winning count", white_is_winning_count)
+    print("Black is winning count", black_is_winning_count)
 
 
 if __name__ == "__main__":
