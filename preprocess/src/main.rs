@@ -123,9 +123,13 @@ async fn create_temp_table(
     conn.prepare(
         "
         CREATE TABLE rows AS (
-            (SELECT fen, cp FROM white_wins LIMIT ?1)
-            UNION ALL
-            (SELECT fen, cp FROM black_wins LIMIT ?1)
+            SELECT fen, cp
+            FROM (
+                (SELECT fen, cp FROM white_wins LIMIT ?1)
+                UNION ALL
+                (SELECT fen, cp FROM black_wins LIMIT ?1)
+            )
+            ORDER BY RANDOM()
         )
         ",
     )?
