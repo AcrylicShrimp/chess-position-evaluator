@@ -2,7 +2,7 @@ import duckdb
 
 
 def main():
-    conn = duckdb.connect("preprocess/lichess_db_eval.duckdb.tmp")
+    conn = duckdb.connect("preprocess/lichess_db_eval.duckdb.tmp", True)
     total_count = conn.execute("SELECT COUNT(*) FROM rows").fetchone()[0]
 
     clipped_count = conn.execute(
@@ -28,6 +28,15 @@ def main():
     print("Cp Max", max)
     print("White is winning count", white_is_winning_count)
     print("Black is winning count", black_is_winning_count)
+
+    first_20_rows = conn.execute("SELECT cp FROM rows LIMIT 20").fetchall()
+    mean = sum(row[0] for row in first_20_rows) / len(first_20_rows)
+    std = (
+        sum((row[0] - mean) ** 2 for row in first_20_rows) / len(first_20_rows)
+    ) ** 0.5
+
+    print("Mean of first 20 rows", mean)
+    print("Std of first 20 rows", std)
 
 
 if __name__ == "__main__":
