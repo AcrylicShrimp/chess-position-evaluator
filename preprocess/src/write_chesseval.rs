@@ -1,7 +1,4 @@
-use chess::{
-    ALL_SQUARES, BitBoard, Board, Color, EMPTY, Piece, Square, get_bishop_moves, get_king_moves,
-    get_knight_moves, get_pawn_attacks, get_rook_moves,
-};
+use chess::{BitBoard, Board, Color, EMPTY, Piece};
 use duckdb::{AccessMode, Config, Connection, Row, params};
 use rayon::prelude::*;
 use std::{path::Path, str::FromStr};
@@ -178,23 +175,11 @@ fn compute_player_en_passant(board: &Board) -> BitBoard {
 }
 
 fn compute_white_attacks(board: &Board) -> BitBoard {
-    let mut attackers = EMPTY;
-
-    for square in ALL_SQUARES {
-        attackers |= get_attackers_to(board, square, Color::White);
-    }
-
-    attackers
+    compute_attack_map(board, Color::White)
 }
 
 fn compute_black_attacks(board: &Board) -> BitBoard {
-    let mut attackers = EMPTY;
-
-    for square in ALL_SQUARES {
-        attackers |= get_attackers_to(board, square, Color::Black);
-    }
-
-    attackers
+    compute_attack_map(board, Color::Black)
 }
 
 fn compute_pieces(board: &Board) -> [BitBoard; 12] {
@@ -214,31 +199,69 @@ fn compute_pieces(board: &Board) -> [BitBoard; 12] {
     ]
 }
 
-pub fn get_attackers_to(board: &Board, target_square: Square, attacking_color: Color) -> BitBoard {
-    let mut attackers = EMPTY;
+fn compute_attack_map(board: &Board, color: Color) -> BitBoard {
+    let mut attack_map = EMPTY;
     let occupied = *board.combined();
 
-    attackers |= get_pawn_attacks(target_square, !attacking_color, EMPTY)
-        & board.pieces(Piece::Pawn)
-        & board.color_combined(attacking_color);
+    for piece_square in *board.color_combined(color) {
+        let piece = board.piece_on(piece_square);
+        let piece = match piece {
+            Some(piece) => piece,
+            None => {
+                continue;
+            }
+        };
 
-    attackers |= get_knight_moves(target_square)
-        & board.pieces(Piece::Knight)
-        & board.color_combined(attacking_color);
+        let attacks = match piece {
+            Piece::Pawn => {
+                chess::get_pawn_attacks(piece_square, color, BitBoard(0xffffffffffffffff))
+            }
+            Piece::Knight => chess::get_knight_moves(piece_square),
+            Piece::Bishop => chess::get_bishop_moves(piece_square, occupied),
+            Piece::Rook => chess::get_rook_moves(piece_square, occupied),
+            Piece::Queen => {
+                chess::get_bishop_moves(piece_square, occupied)
+                    | chess::get_rook_moves(piece_square, occupied)
+            }
+            Piece::King => chess::get_king_moves(piece_square),
+        };
 
-    let bishop_like_attackers = board.pieces(Piece::Bishop) | board.pieces(Piece::Queen);
-    attackers |= get_bishop_moves(target_square, occupied)
-        & bishop_like_attackers
-        & board.color_combined(attacking_color);
+        attack_map |= attacks;
+    }
 
-    let rook_like_attackers = board.pieces(Piece::Rook) | board.pieces(Piece::Queen);
-    attackers |= get_rook_moves(target_square, occupied)
-        & rook_like_attackers
-        & board.color_combined(attacking_color);
+    attack_map
+}
 
-    attackers |= get_king_moves(target_square)
-        & board.pieces(Piece::King)
-        & board.color_combined(attacking_color);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chess::{ALL_FILES, ALL_RANKS, Square};
 
-    attackers
+    fn visualize_bitboard(bitboard: BitBoard) {
+        for rank in ALL_RANKS.iter().rev() {
+            for file in ALL_FILES {
+                let square = Square::make_square(*rank, file);
+                if (bitboard & BitBoard::from_square(square)) != EMPTY {
+                    print!("1");
+                } else {
+                    print!("0");
+                }
+            }
+            println!();
+        }
+    }
+
+    #[test]
+    fn test_compute_attack_map() {
+        let board =
+            Board::from_str("rnbqkbnr/ppppp3/6pp/4p3/3P4/3B4/PPP2PPP/RNBQK1NR w KQkq - 0 5")
+                .unwrap();
+
+        let white_attacks = compute_attack_map(&board, Color::White);
+        let black_attacks = compute_attack_map(&board, Color::Black);
+
+        visualize_bitboard(white_attacks);
+        println!("--------------------------------");
+        visualize_bitboard(black_attacks);
+    }
 }
