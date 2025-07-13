@@ -1,6 +1,7 @@
 import chess
-import os
 import numpy as np
+import os
+import random
 import torch
 from chess_evaluation_reader import boolean2tensor, bitboard2tensors
 from model import Model
@@ -26,9 +27,7 @@ def get_attack_mask(board: chess.Board, color: chess.Color) -> int:
     return attack_mask
 
 
-def fen2tensor(fen: str) -> torch.Tensor:
-    board = chess.Board(fen)
-
+def board2tensor(board: chess.Board) -> torch.Tensor:
     turn_tensor = boolean2tensor(board.turn == chess.WHITE)
     wk_castle_tensor = boolean2tensor(board.has_kingside_castling_rights(chess.WHITE))
     wq_castle_tensor = boolean2tensor(board.has_queenside_castling_rights(chess.WHITE))
@@ -99,6 +98,58 @@ def compute_black_attacks(board: chess.Board) -> chess.Bitboard:
     return squares.mask
 
 
+def board2score(board: chess.Board, model: Model, device: torch.device) -> float:
+    input_tensor = board2tensor(board)
+    input_tensor = input_tensor.unsqueeze(0)
+    input_tensor = input_tensor.to(device)
+
+    with torch.no_grad():
+        output = model(input_tensor)
+        return output[0, 0].item()
+
+
+def make_ai_move(board: chess.Board, model: Model, device: torch.device) -> chess.Move:
+    moves: list[tuple[chess.Move, float]] = []
+
+    for move in board.legal_moves:
+        board_in_next_turn = board.copy()
+        board_in_next_turn.push(move)
+        score = board2score(board_in_next_turn, model, device)
+
+        if board.turn == chess.BLACK:
+            score = -score
+
+        moves.append((move, score))
+
+    sorted_moves = sorted(moves, key=lambda x: x[1], reverse=True)
+    best_move = sorted_moves[0]
+    candidate_moves = list(
+        filter(lambda x: 0 <= x[1] and (best_move[1] - x[1]) < 0.5, sorted_moves)
+    )
+
+    if len(candidate_moves) == 0:
+        return best_move[0]
+
+    return random.choice(candidate_moves)[0]
+
+
+def make_player_move(board: chess.Board) -> chess.Move:
+    while True:
+        move = input("Enter move (san): ")
+
+        try:
+            move = board.parse_san(move)
+        except ValueError:
+            print("Invalid move")
+            continue
+
+        if move not in board.legal_moves:
+            print("Invalid move")
+            continue
+
+        return move
+
+
 def main():
     print(f"[✓] Using torch version: {torch.__version__}")
 
@@ -126,36 +177,37 @@ def main():
     best_validation_loss = checkpoint["best_validation_loss"]
     print(f"[✓] Best validation loss: {best_validation_loss:.4f}")
 
-    while True:
-        fen = input("Enter FEN: ")
-        fen = fen.strip()
+    board = chess.Board()
+    ai_color = random.random() < 0.5
 
-        if fen == "":
+    while True:
+        print(board)
+
+        if board.is_checkmate():
+            if ai_color == board.turn:
+                print("You win!")
+            else:
+                print("AI lose!")
+
             break
 
-        try:
-            input_tensor = fen2tensor(fen)
-            input_tensor = input_tensor.unsqueeze(0)
-            input_tensor = input_tensor.to(device)
+        if board.is_stalemate():
+            print("Stalemate!")
+            break
 
-            with torch.no_grad():
-                output = model(input_tensor)
-                cp_score = output[0, 0].item()
-                print(f"CP Score: {cp_score:.2f}")
+        if board.is_insufficient_material():
+            print("Insufficient material!")
+            break
 
-                if 3 <= cp_score:
-                    print("White is winning")
-                elif 0.5 <= cp_score:
-                    print("White has a small advantage")
-                elif cp_score <= -0.5:
-                    print("Black has a small advantage")
-                elif cp_score <= -3:
-                    print("Black is winning")
-                else:
-                    print("Both sides are equal")
+        if ai_color == board.turn:
+            move = make_ai_move(board, model, device)
+            print(f"AI move is: {move.uci()}")
+        else:
+            move = make_player_move(board)
+            print(f"Your move is: {move}")
 
-        except Exception as e:
-            print(f"Error evaluating position: {e}")
+        print()
+        board.push(move)
 
 
 if __name__ == "__main__":
