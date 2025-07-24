@@ -11,12 +11,12 @@ const VALIDATION_SET_RATIO: f64 = 0.1;
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     if tokio::fs::try_exists(TRAIN_CHESSEVAL_PATH).await? {
-        println!("{} already exists; removing...", TRAIN_CHESSEVAL_PATH);
+        println!("{TRAIN_CHESSEVAL_PATH} already exists; removing...");
         tokio::fs::remove_file(TRAIN_CHESSEVAL_PATH).await?;
     }
 
     if tokio::fs::try_exists(VALIDATION_CHESSEVAL_PATH).await? {
-        println!("{} already exists; removing...", VALIDATION_CHESSEVAL_PATH);
+        println!("{VALIDATION_CHESSEVAL_PATH} already exists; removing...");
         tokio::fs::remove_file(VALIDATION_CHESSEVAL_PATH).await?;
     }
 
@@ -26,22 +26,22 @@ async fn main() -> Result<(), anyhow::Error> {
     let row_count = conn.query_row::<i64, _, _>("SELECT COUNT(*) FROM rows", params![], |row| {
         row.get::<_, i64>(0)
     })?;
-    println!("total {} rows loaded", row_count);
+    println!("total {row_count} rows loaded");
 
     // 2. compute train and validation set sizes
     let validation_set_size = (row_count as f64 * VALIDATION_SET_RATIO) as i64;
     let train_set_size = row_count - validation_set_size;
 
-    println!("train set size: {}", train_set_size);
-    println!("validation set size: {}", validation_set_size);
+    println!("train set size: {train_set_size}");
+    println!("validation set size: {validation_set_size}");
 
     drop(conn);
 
-    println!("writing train set to {}", TRAIN_CHESSEVAL_PATH);
+    println!("writing train set to {TRAIN_CHESSEVAL_PATH}");
     write_chesseval::write_chesseval(DUCKDB_TEMP_PATH, TRAIN_CHESSEVAL_PATH, 0, train_set_size)
         .await?;
 
-    println!("writing validation set to {}", VALIDATION_CHESSEVAL_PATH);
+    println!("writing validation set to {VALIDATION_CHESSEVAL_PATH}");
     write_chesseval::write_chesseval(
         DUCKDB_TEMP_PATH,
         VALIDATION_CHESSEVAL_PATH,
@@ -60,7 +60,7 @@ async fn create_temp_table(
     chess_evaluation_db_path: &str,
 ) -> Result<(), anyhow::Error> {
     if tokio::fs::try_exists(path).await? {
-        println!("{} already exists; reusing...", path);
+        println!("{path} already exists; reusing...");
         return Ok(());
     }
 
