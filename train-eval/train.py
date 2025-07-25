@@ -18,7 +18,7 @@ class Trainer:
         self.enable_amp = device.type != "cpu"
 
         self.optimizer = torch.optim.AdamW(
-            model.parameters(), lr=1e-4, weight_decay=1e-4
+            model.parameters(), lr=1e-5, weight_decay=1e-4
         )
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer, T_max=10
@@ -129,8 +129,9 @@ class Trainer:
                     self.save_checkpoint(checkpoint_path, epoch)
                     del train_data_loader._iterator
                     del validation_data_loader._iterator
+                    writer.flush()
                     print("[!] Stopping training (Ctrl+C pressed)")
-                    exit(0)
+                    os._exit(0)
 
             self.save_checkpoint(
                 checkpoint_path,

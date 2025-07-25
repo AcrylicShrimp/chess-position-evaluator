@@ -13,7 +13,7 @@ def main():
     train_data_path = "train.chesseval"
     validation_data_path = "validation.chesseval"
     checkpoint_path = "model.pth"
-    best_checkpoint_path = "best_model.pth"
+    best_checkpoint_path = "model-best.pth"
     tensorboard_path = "tensorboard/chess-ai"
     batch_size = 512
     epochs = 100000
