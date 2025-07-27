@@ -98,9 +98,9 @@ async fn create_temp_table(
     let minimum = white_is_winning_count.min(black_is_winning_count);
     let base_total_count = white_is_winning_count + black_is_winning_count;
 
-    let equal_position_count = (base_total_count as f32 * 0.05) as i64;
-    let white_wins_count = (base_total_count as f32 * 0.05) as i64;
-    let black_wins_count = (base_total_count as f32 * 0.05) as i64;
+    let equal_position_count = (base_total_count as f32 * 0.2) as i64;
+    let white_wins_count = (base_total_count as f32 * 0.1) as i64;
+    let black_wins_count = (base_total_count as f32 * 0.1) as i64;
 
     conn.prepare(
         "
@@ -116,7 +116,7 @@ async fn create_temp_table(
         )
         WHERE pvs.cp IS NOT NULL AND ABS(pvs.cp) <= 10
         ORDER BY RANDOM()
-        LIMIT ?1
+        LIMIT ?2
         ",
     )?
     .execute(params![chess_evaluation_db_path, equal_position_count])?;
@@ -134,7 +134,7 @@ async fn create_temp_table(
         )
         WHERE pvs.mate IS NOT NULL AND 1 <= pvs.mate AND pvs.mate <= 3
         ORDER BY RANDOM()
-        LIMIT ?1
+        LIMIT ?2
         ",
     )?
     .execute(params![chess_evaluation_db_path, white_wins_count])?;
@@ -152,7 +152,7 @@ async fn create_temp_table(
         )
         WHERE pvs.mate IS NOT NULL AND -3 <= pvs.mate AND pvs.mate <= -1
         ORDER BY RANDOM()
-        LIMIT ?1
+        LIMIT ?2
         ",
     )?
     .execute(params![chess_evaluation_db_path, black_wins_count])?;
@@ -179,6 +179,17 @@ async fn create_temp_table(
         ",
     )?
     .execute(params![])?;
+    conn.prepare(
+        "
+        CREATE TABLE equal_positions AS (
+            SELECT fen, cp
+            FROM all_rows
+            WHERE cp = 0
+            ORDER BY RANDOM()
+        )
+        ",
+    )?
+    .execute(params![])?;
 
     conn.prepare(
         "
@@ -188,6 +199,8 @@ async fn create_temp_table(
                 (SELECT fen, cp FROM white_wins LIMIT ?1)
                 UNION ALL
                 (SELECT fen, cp FROM black_wins LIMIT ?1)
+                UNION ALL
+                (SELECT fen, cp FROM equal_positions)
             )
             ORDER BY RANDOM()
         )
