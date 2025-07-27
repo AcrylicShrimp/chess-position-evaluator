@@ -1,5 +1,4 @@
 import chess
-import numpy as np
 import os
 import random
 import torch
@@ -41,7 +40,7 @@ def main():
 
     print(f"[✓] Using device: {device}")
 
-    best_checkpoint_path = "eval_model.pth"
+    best_checkpoint_path = "model-best.pth"
     model = Model()
     model.to(device)
 

@@ -24,4 +24,4 @@ def compute_ordered_moves(
         key=lambda move: move[1],
         reverse=board.turn == chess.WHITE,
     )
-    return [move for move, _ in sorted_moves]
+    return [move for move, _ in sorted_moves][:10]

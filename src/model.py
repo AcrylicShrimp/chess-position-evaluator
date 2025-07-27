@@ -23,29 +23,31 @@ class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.initial_block = torch.nn.Sequential(
-            torch.nn.Conv2d(20, 128, kernel_size=3, padding=1, bias=False),
-            torch.nn.BatchNorm2d(128),
+            torch.nn.Conv2d(20, 96, kernel_size=3, padding=1, bias=False),
+            torch.nn.BatchNorm2d(96),
             torch.nn.ReLU(inplace=True),
         )
 
         self.residual_blocks = torch.nn.Sequential(
-            ResidualBlock(128),
-            ResidualBlock(128),
-            ResidualBlock(128),
-            ResidualBlock(128),
-            ResidualBlock(128),
-            ResidualBlock(128),
-            ResidualBlock(128),
-            ResidualBlock(128),
-            ResidualBlock(128),
-            ResidualBlock(128),
-            ResidualBlock(128),
-            ResidualBlock(128),
+            ResidualBlock(96),
+            ResidualBlock(96),
+            ResidualBlock(96),
+            ResidualBlock(96),
+            ResidualBlock(96),
+            ResidualBlock(96),
+            ResidualBlock(96),
+            ResidualBlock(96),
+            ResidualBlock(96),
+            ResidualBlock(96),
+            ResidualBlock(96),
+            ResidualBlock(96),
+            ResidualBlock(96),
+            ResidualBlock(96),
         )
 
         self.gap = torch.nn.AdaptiveAvgPool2d((1, 1))
 
-        head_input_size = 128
+        head_input_size = 96
 
         self.cp_head = torch.nn.Sequential(
             torch.nn.Linear(head_input_size, 512),
