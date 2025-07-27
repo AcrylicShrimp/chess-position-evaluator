@@ -96,6 +96,66 @@ async fn create_temp_table(
         |row| row.get::<_, i64>(0),
     )?;
     let minimum = white_is_winning_count.min(black_is_winning_count);
+    let base_total_count = white_is_winning_count + black_is_winning_count;
+
+    let equal_position_count = (base_total_count as f32 * 0.05) as i64;
+    let white_wins_count = (base_total_count as f32 * 0.05) as i64;
+    let black_wins_count = (base_total_count as f32 * 0.05) as i64;
+
+    conn.prepare(
+        "
+        INSERT INTO all_rows
+        SELECT fen, pvs.cp as cp
+        FROM (
+            SELECT fen, list_extract(eval.pvs, 1) as pvs
+            FROM (
+                SELECT fen, unnest(evals) as eval
+                FROM read_json_auto(?1)
+            )
+            WHERE 10 <= eval.depth AND array_length(eval.pvs) != 0
+        )
+        WHERE pvs.cp IS NOT NULL AND ABS(pvs.cp) <= 10
+        ORDER BY RANDOM()
+        LIMIT ?1
+        ",
+    )?
+    .execute(params![chess_evaluation_db_path, equal_position_count])?;
+    conn.prepare(
+        "
+        INSERT INTO all_rows
+        SELECT fen, 2000 as cp
+        FROM (
+            SELECT fen, list_extract(eval.pvs, 1) as pvs
+            FROM (
+                SELECT fen, unnest(evals) as eval
+                FROM read_json_auto(?1)
+            )
+            WHERE 10 <= eval.depth AND array_length(eval.pvs) != 0
+        )
+        WHERE pvs.mate IS NOT NULL AND 1 <= pvs.mate AND pvs.mate <= 3
+        ORDER BY RANDOM()
+        LIMIT ?1
+        ",
+    )?
+    .execute(params![chess_evaluation_db_path, white_wins_count])?;
+    conn.prepare(
+        "
+        INSERT INTO all_rows
+        SELECT fen, -2000 as cp
+        FROM (
+            SELECT fen, list_extract(eval.pvs, 1) as pvs
+            FROM (
+                SELECT fen, unnest(evals) as eval
+                FROM read_json_auto(?1)
+            )
+            WHERE 10 <= eval.depth AND array_length(eval.pvs) != 0
+        )
+        WHERE pvs.mate IS NOT NULL AND -3 <= pvs.mate AND pvs.mate <= -1
+        ORDER BY RANDOM()
+        LIMIT ?1
+        ",
+    )?
+    .execute(params![chess_evaluation_db_path, black_wins_count])?;
 
     conn.prepare(
         "
