@@ -18,6 +18,9 @@ def main():
     black_is_winning_count = conn.execute(
         "SELECT COUNT(*) FROM rows WHERE cp < 0"
     ).fetchone()[0]
+    equal_position_count = conn.execute(
+        "SELECT COUNT(*) FROM rows WHERE cp = 0"
+    ).fetchone()[0]
 
     print("Total count", total_count)
     print("Clipped count", clipped_count)
@@ -28,6 +31,7 @@ def main():
     print("Cp Max", max)
     print("White is winning count", white_is_winning_count)
     print("Black is winning count", black_is_winning_count)
+    print("Equal position count", equal_position_count)
 
     first_20_rows = conn.execute("SELECT cp FROM rows LIMIT 20").fetchall()
     mean = sum(row[0] for row in first_20_rows) / len(first_20_rows)
