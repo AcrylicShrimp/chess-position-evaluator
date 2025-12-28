@@ -15,7 +15,7 @@ def main():
     checkpoint_path = "model.pth"
     best_checkpoint_path = "model-best.pth"
     tensorboard_path = "tensorboard/chess-ai"
-    batch_size = 512
+    batch_size = 4096
     epochs = 100000
     steps_per_epoch = 4096
 

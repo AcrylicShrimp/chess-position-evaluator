@@ -1,5 +1,6 @@
 mod write_chesseval;
 
+use crate::write_chesseval::centipawn_to_win_prob;
 use duckdb::{Connection, params};
 
 const DUCKDB_TEMP_PATH: &str = "lichess_db_eval.duckdb.tmp";
@@ -27,6 +28,8 @@ async fn main() -> Result<(), anyhow::Error> {
         row.get::<_, i64>(0)
     })?;
     println!("total {row_count} rows loaded");
+
+    check_minimum_entropy(&conn)?;
 
     // 2. compute train and validation set sizes
     let validation_set_size = (row_count as f64 * VALIDATION_SET_RATIO) as i64;
@@ -68,145 +71,104 @@ async fn create_temp_table(
 
     conn.prepare(
         "
-        CREATE TABLE all_rows AS (
-            SELECT fen, pvs.cp as cp
+        CREATE TABLE base_evals AS (
+            SELECT 
+                fen, 
+                CASE 
+                    WHEN pvs.mate IS NOT NULL THEN 
+                        CASE WHEN pvs.mate > 0 THEN 2000 ELSE -2000 END
+                    ELSE pvs.cp 
+                END as cp
             FROM (
                 SELECT fen, list_extract(eval.pvs, 1) as pvs
                 FROM (
                     SELECT fen, unnest(evals) as eval
                     FROM read_json_auto(?1)
                 )
-                WHERE 10 <= eval.depth AND array_length(eval.pvs) != 0
+                WHERE 10 <= eval.depth 
+                  AND array_length(eval.pvs) != 0
             )
-            WHERE pvs.cp IS NOT NULL AND 50 <= ABS(pvs.cp) AND ABS(pvs.cp) <= 2000
-            ORDER BY RANDOM()
+            WHERE (pvs.cp IS NOT NULL OR pvs.mate IS NOT NULL)
         )
         ",
     )?
     .execute(params![chess_evaluation_db_path])?;
 
-    let white_is_winning_count = conn.query_row::<i64, _, _>(
-        "SELECT COUNT(*) FROM all_rows WHERE cp > 0",
+    let nuanced_count = conn.query_row::<i64, _, _>(
+        "SELECT COUNT(*) FROM base_evals WHERE cp >= -150 AND cp <= 150",
         params![],
-        |row| row.get::<_, i64>(0),
+        |row| row.get(0),
     )?;
-    let black_is_winning_count = conn.query_row::<i64, _, _>(
-        "SELECT COUNT(*) FROM all_rows WHERE cp < 0",
-        params![],
-        |row| row.get::<_, i64>(0),
-    )?;
-    let minimum = white_is_winning_count.min(black_is_winning_count);
-    let base_total_count = white_is_winning_count + black_is_winning_count;
 
-    let equal_position_count = (base_total_count as f32 * 0.2) as i64;
-    let white_wins_count = (base_total_count as f32 * 0.1) as i64;
-    let black_wins_count = (base_total_count as f32 * 0.1) as i64;
+    println!("Nuanced rows available: {}", nuanced_count);
 
-    conn.prepare(
-        "
-        INSERT INTO all_rows
-        SELECT fen, pvs.cp as cp
-        FROM (
-            SELECT fen, list_extract(eval.pvs, 1) as pvs
-            FROM (
-                SELECT fen, unnest(evals) as eval
-                FROM read_json_auto(?1)
-            )
-            WHERE 10 <= eval.depth AND array_length(eval.pvs) != 0
-        )
-        WHERE pvs.cp IS NOT NULL AND ABS(pvs.cp) <= 10
-        ORDER BY RANDOM()
-        LIMIT ?2
-        ",
-    )?
-    .execute(params![chess_evaluation_db_path, equal_position_count])?;
-    conn.prepare(
-        "
-        INSERT INTO all_rows
-        SELECT fen, 2000 as cp
-        FROM (
-            SELECT fen, list_extract(eval.pvs, 1) as pvs
-            FROM (
-                SELECT fen, unnest(evals) as eval
-                FROM read_json_auto(?1)
-            )
-            WHERE 10 <= eval.depth AND array_length(eval.pvs) != 0
-        )
-        WHERE pvs.mate IS NOT NULL AND 1 <= pvs.mate AND pvs.mate <= 3
-        ORDER BY RANDOM()
-        LIMIT ?2
-        ",
-    )?
-    .execute(params![chess_evaluation_db_path, white_wins_count])?;
-    conn.prepare(
-        "
-        INSERT INTO all_rows
-        SELECT fen, -2000 as cp
-        FROM (
-            SELECT fen, list_extract(eval.pvs, 1) as pvs
-            FROM (
-                SELECT fen, unnest(evals) as eval
-                FROM read_json_auto(?1)
-            )
-            WHERE 10 <= eval.depth AND array_length(eval.pvs) != 0
-        )
-        WHERE pvs.mate IS NOT NULL AND -3 <= pvs.mate AND pvs.mate <= -1
-        ORDER BY RANDOM()
-        LIMIT ?2
-        ",
-    )?
-    .execute(params![chess_evaluation_db_path, black_wins_count])?;
+    let side_ratio = 0.15;
+    let limit_count = (nuanced_count as f64 * side_ratio) as i64;
 
-    conn.prepare(
-        "
-        CREATE TABLE white_wins AS (
-            SELECT fen, cp
-            FROM all_rows
-            WHERE cp > 0
-            ORDER BY RANDOM()
-        )
-        ",
-    )?
-    .execute(params![])?;
-    conn.prepare(
-        "
-        CREATE TABLE black_wins AS (
-            SELECT fen, cp
-            FROM all_rows
-            WHERE cp < 0
-            ORDER BY RANDOM()
-        )
-        ",
-    )?
-    .execute(params![])?;
-    conn.prepare(
-        "
-        CREATE TABLE equal_positions AS (
-            SELECT fen, cp
-            FROM all_rows
-            WHERE cp = 0
-            ORDER BY RANDOM()
-        )
-        ",
-    )?
-    .execute(params![])?;
+    println!("Using ALL Nuanced rows.");
+    println!(
+        "Sampling {} rows for White/Black wins each (ratio {:.2})",
+        limit_count, side_ratio
+    );
 
     conn.prepare(
         "
         CREATE TABLE rows AS (
-            SELECT fen, cp
-            FROM (
-                (SELECT fen, cp FROM white_wins LIMIT ?1)
+            SELECT fen, cp FROM (
+                (SELECT fen, cp FROM base_evals WHERE cp > 150 ORDER BY RANDOM() LIMIT ?1)
                 UNION ALL
-                (SELECT fen, cp FROM black_wins LIMIT ?1)
+                (SELECT fen, cp FROM base_evals WHERE cp < -150 ORDER BY RANDOM() LIMIT ?1)
                 UNION ALL
-                (SELECT fen, cp FROM equal_positions)
+                (SELECT fen, cp FROM base_evals WHERE cp >= -150 AND cp <= 150)
             )
             ORDER BY RANDOM()
         )
         ",
     )?
-    .execute(params![minimum])?;
+    .execute(params![limit_count])?;
+
+    conn.execute("DROP TABLE base_evals", params![])?;
+
+    Ok(())
+}
+
+fn binary_entropy(p: f32) -> f32 {
+    let p = p.clamp(1e-7, 1.0 - 1e-7);
+    -(p * p.ln() + (1.0 - p) * (1.0 - p).ln())
+}
+
+fn check_minimum_entropy(conn: &Connection) -> Result<(), anyhow::Error> {
+    let mut stmt = conn.prepare("SELECT cp FROM rows")?;
+    let cp_iter = stmt.query_map(params![], |row| row.get::<_, i32>(0))?;
+
+    let mut total_entropy = 0f64;
+    let mut count = 0;
+    let mut zero_cp_count = 0;
+
+    for cp_result in cp_iter {
+        let cp = cp_result?;
+
+        if cp == 0 {
+            zero_cp_count += 1;
+        }
+
+        let prob = centipawn_to_win_prob(cp);
+        let entropy = binary_entropy(prob);
+
+        total_entropy += entropy as f64;
+        count += 1;
+    }
+
+    let avg_entropy = total_entropy / count as f64;
+    let zero_ratio = zero_cp_count as f64 / count as f64 * 100.0;
+
+    println!("--------------------------------------------------");
+    println!("Total rows analyzed: {}", count);
+    println!("'Draw' (cp=0) ratio: {:.2}%", zero_ratio);
+    println!("--------------------------------------------------");
+    println!("★ Theoretical Minimum BCE Loss: {:.6}", avg_entropy);
+    println!("--------------------------------------------------");
+    println!("(Even if your model is PERFECT, the loss cannot go below this value)");
 
     Ok(())
 }

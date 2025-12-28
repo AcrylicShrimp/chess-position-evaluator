@@ -9,6 +9,13 @@ struct ChessEvaluationRow {
     cp: i32,
 }
 
+/// Converts centipawns to win probability.
+///
+/// It uses the ELO formula, treating the centipawns as the direct rating difference.
+pub fn centipawn_to_win_prob(cp: i32) -> f32 {
+    1f32 / (1f32 + 10f32.powf(-cp as f32 / 400f32))
+}
+
 fn extract_chess_evaluation_row(row: &Row) -> Result<ChessEvaluationRow, anyhow::Error> {
     let fen = row.get::<_, String>(0)?;
     let cp = row.get::<_, i32>(1)?;
@@ -107,8 +114,8 @@ fn construct_chunk(chunk: Vec<ChessEvaluationRow>) -> (usize, Vec<u8>) {
         }
 
         // label: 4 bytes
-        let cp = (row.cp as f32 * 0.01).clamp(-20.0, 20.0);
-        bytes.extend(cp.to_le_bytes());
+        let win_prob = centipawn_to_win_prob(row.cp);
+        bytes.extend(win_prob.to_le_bytes());
 
         row_count += 1;
     }

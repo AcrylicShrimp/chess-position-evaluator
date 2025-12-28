@@ -111,7 +111,7 @@ def main():
 
     print(f"[✓] Using device: {device}")
 
-    best_checkpoint_path = "best-model.pth"
+    best_checkpoint_path = "model-best.pth"
     model = Model()
     model.to(device)
 
@@ -140,22 +140,26 @@ def main():
 
             with torch.no_grad():
                 output = model(input_tensor)
-                cp_score = output[0, 0].item()
-                print(f"CP Score: {cp_score:.2f}")
+                win_prob = torch.sigmoid(output).item()
+                print(f"Win Probability: {win_prob:.2f}")
 
-                if 3 <= cp_score:
+                if win_prob >= centipawn_to_win_prob(300):
                     print("White is winning")
-                elif 0.5 <= cp_score:
+                elif win_prob >= centipawn_to_win_prob(150):
                     print("White has a small advantage")
-                elif cp_score <= -0.5:
-                    print("Black has a small advantage")
-                elif cp_score <= -3:
+                elif win_prob <= (1 - centipawn_to_win_prob(300)):
                     print("Black is winning")
+                elif win_prob <= (1 - centipawn_to_win_prob(150)):
+                    print("Black has a small advantage")
                 else:
                     print("Both sides are equal")
 
         except Exception as e:
             print(f"Error evaluating position: {e}")
+
+
+def centipawn_to_win_prob(cp: int) -> float:
+    return 1.0 / (1.0 + 10.0 ** (float(-cp) / 400.0))
 
 
 if __name__ == "__main__":

@@ -18,10 +18,10 @@ class Trainer:
         self.enable_amp = device.type != "cpu"
 
         self.optimizer = torch.optim.AdamW(
-            model.parameters(), lr=1e-5, weight_decay=1e-4
+            model.parameters(), lr=1e-3, weight_decay=1e-4
         )
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer, T_max=10
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer, mode="min", factor=0.5, patience=10
         )
         self.grad_scaler = torch.amp.GradScaler()
 
@@ -139,7 +139,6 @@ class Trainer:
             )
             print(f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
 
-            self.scheduler.step()
             self.model.eval()
 
             validation_loss_acc = 0.0
@@ -165,6 +164,8 @@ class Trainer:
 
             print(f"[✓] Validation Loss: {avg_validation_loss:.4f}")
 
+            self.scheduler.step(avg_validation_loss)
+
             if avg_validation_loss < self.best_validation_loss:
                 self.best_validation_loss = avg_validation_loss
                 self.save_checkpoint(best_checkpoint_path, epoch + 1)
@@ -182,4 +183,4 @@ class Trainer:
 
 
 def compute_loss(output: torch.Tensor, label: torch.Tensor) -> torch.Tensor:
-    return torch.nn.functional.mse_loss(output, label)
+    return torch.nn.functional.binary_cross_entropy_with_logits(output, label)
