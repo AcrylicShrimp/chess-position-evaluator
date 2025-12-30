@@ -39,7 +39,7 @@ pub async fn write_chesseval(
         .step_by(CHUNK_SIZE)
         .par_bridge()
         .map(|chunk_offset| {
-            let chunk_size = std::cmp::min(CHUNK_SIZE, (limit - chunk_offset) as usize);
+            let chunk_size = std::cmp::min(CHUNK_SIZE, (offset + limit - chunk_offset) as usize);
             process_chunk(chunk_size, chunk_offset, duckdb_temp_path)
         })
         .collect::<Result<Vec<_>, _>>()?;
