@@ -7,6 +7,7 @@ const DUCKDB_TEMP_PATH: &str = "lichess_db_eval.duckdb.tmp";
 const CHESS_EVALUATION_DB_PATH: &str = "lichess_db_eval.jsonl";
 const TRAIN_CHESSEVAL_PATH: &str = "train.chesseval";
 const VALIDATION_CHESSEVAL_PATH: &str = "validation.chesseval";
+const DATASET_RATIO: f64 = 0.4;
 const VALIDATION_SET_RATIO: f64 = 0.1;
 
 #[tokio::main]
@@ -29,11 +30,14 @@ async fn main() -> Result<(), anyhow::Error> {
     })?;
     println!("total {row_count} rows loaded");
 
+    let dataset_size = (row_count as f64 * DATASET_RATIO) as i64;
+    println!("will use {dataset_size} rows for training and validation");
+
     check_minimum_entropy(&conn)?;
 
     // 2. compute train and validation set sizes
-    let validation_set_size = (row_count as f64 * VALIDATION_SET_RATIO) as i64;
-    let train_set_size = row_count - validation_set_size;
+    let validation_set_size = (dataset_size as f64 * VALIDATION_SET_RATIO) as i64;
+    let train_set_size = dataset_size - validation_set_size;
 
     println!("train set size: {train_set_size}");
     println!("validation set size: {validation_set_size}");
