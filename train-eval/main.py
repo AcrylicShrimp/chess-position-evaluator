@@ -15,9 +15,9 @@ def main():
     checkpoint_path = "model.pth"
     best_checkpoint_path = "model-best.pth"
     tensorboard_path = "tensorboard/chess-ai"
-    batch_size = 4096
+    batch_size = 8 * 1024
     epochs = 100000
-    steps_per_epoch = 4096
+    steps_per_epoch = 1024
 
     if os.environ.get("CHECKPOINT_PATH"):
         checkpoint_path = os.environ.get("CHECKPOINT_PATH")
@@ -66,7 +66,8 @@ def main():
     )
 
     print(f"[✓] Data loaded from {train_data_path} ({len(train_data)} rows)")
-    print(f"[✓] Data loaded from {validation_data_path} ({len(validation_data)} rows)")
+    print(
+        f"[✓] Data loaded from {validation_data_path} ({len(validation_data)} rows)")
 
     with SummaryWriter(tensorboard_path) as writer:
         print(f"[✓] Tensorboard writer initialized at {tensorboard_path}")

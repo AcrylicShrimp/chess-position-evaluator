@@ -28,7 +28,7 @@ class Trainer:
         self.model.to(self.device)
 
         if self.device.type == "cuda":
-            self.model.compile()
+            self.model.compile(mode="reduce-overhead")
             print(f"[✓] Model compiled (cuda)")
         else:
             print("[!] Model will not be compiled; no cuda device found")
@@ -103,7 +103,7 @@ class Trainer:
                 self.optimizer.zero_grad(set_to_none=True)
 
                 with torch.autocast(
-                    device_type=self.device.type, enabled=self.enable_amp
+                    device_type=self.device.type, enabled=self.enable_amp, dtype=torch.bfloat16 if self.device.type == "cuda" else None
                 ):
                     output = self.model(input)
                     loss = compute_loss(output, label)
@@ -137,7 +137,8 @@ class Trainer:
                 checkpoint_path,
                 epoch,
             )
-            print(f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
+            print(
+                f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
 
             self.model.eval()
 
