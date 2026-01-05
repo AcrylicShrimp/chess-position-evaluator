@@ -23,5 +23,5 @@ class ChessDataset(torch.utils.data.Dataset):
         return self.len
 
     def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor]:
-        row = self.mm[index * 125 : (index + 1) * 125]
-        return read_chess_evaluation(row)
+        row = self.mm[index * 125: (index + 1) * 125]
+        return read_chess_evaluation(row.tobytes())
