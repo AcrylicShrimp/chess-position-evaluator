@@ -21,7 +21,7 @@ class Trainer:
             model.parameters(), lr=1e-3, weight_decay=1e-4
         )
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode="min", factor=0.5, patience=10
+            self.optimizer, mode="min", factor=0.5, patience=10, verbose=True
         )
         self.grad_scaler = torch.amp.GradScaler()
 
