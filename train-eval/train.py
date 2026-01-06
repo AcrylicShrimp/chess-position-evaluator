@@ -21,7 +21,7 @@ class Trainer:
             model.parameters(), lr=1e-3, weight_decay=1e-4
         )
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode="min", factor=0.5, patience=10, verbose=True
+            self.optimizer, mode="min", factor=0.5, patience=10
         )
         self.grad_scaler = torch.amp.GradScaler()
 
@@ -103,7 +103,9 @@ class Trainer:
                 self.optimizer.zero_grad(set_to_none=True)
 
                 with torch.autocast(
-                    device_type=self.device.type, enabled=self.enable_amp, dtype=torch.bfloat16 if self.device.type == "cuda" else None
+                    device_type=self.device.type,
+                    enabled=self.enable_amp,
+                    dtype=torch.bfloat16 if self.device.type == "cuda" else None,
                 ):
                     output = self.model(input)
                     loss = compute_loss(output, label)
@@ -137,8 +139,7 @@ class Trainer:
                 checkpoint_path,
                 epoch,
             )
-            print(
-                f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
+            print(f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
 
             self.model.eval()
 

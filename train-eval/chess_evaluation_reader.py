@@ -10,22 +10,18 @@ def read_chess_evaluation_length(file: BinaryIO) -> int:
 
 
 def read_chess_evaluation(
-    row: np.ndarray,
+    row: bytes,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    (bitflags, player_en_passant, white_attacks, black_attacks, *pieces, win_prob) = (
-        struct.unpack("<BQQQ12Qf", row)
-    )
+    (bitflags, player_en_passant, *pieces, win_prob) = struct.unpack("<BQ12Qf", row)
 
-    turn = boolean2tensor(bitflags & 1 == 1)
-    white_kingside_castling_rights = boolean2tensor(bitflags & 2 == 2)
-    white_queenside_castling_rights = boolean2tensor(bitflags & 4 == 4)
-    black_kingside_castling_rights = boolean2tensor(bitflags & 8 == 8)
-    black_queenside_castling_rights = boolean2tensor(bitflags & 16 == 16)
+    am_i_black_color = boolean2tensor(bitflags & 1 == 1)
+    our_kingside_castling_rights = boolean2tensor(bitflags & 2 == 2)
+    our_queenside_castling_rights = boolean2tensor(bitflags & 4 == 4)
+    their_kingside_castling_rights = boolean2tensor(bitflags & 8 == 8)
+    their_queenside_castling_rights = boolean2tensor(bitflags & 16 == 16)
     bitboards = bitboard2tensors(
         [
             player_en_passant,
-            white_attacks,
-            black_attacks,
             *pieces,
         ]
     )
@@ -33,11 +29,11 @@ def read_chess_evaluation(
     # 4. create the input tensor
     input = torch.vstack(
         [
-            turn,
-            white_kingside_castling_rights,
-            white_queenside_castling_rights,
-            black_kingside_castling_rights,
-            black_queenside_castling_rights,
+            am_i_black_color,
+            our_kingside_castling_rights,
+            our_queenside_castling_rights,
+            their_kingside_castling_rights,
+            their_queenside_castling_rights,
             bitboards,
         ]
     )

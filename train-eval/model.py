@@ -45,7 +45,7 @@ class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.initial_block = torch.nn.Sequential(
-            torch.nn.Conv2d(20, 128, kernel_size=3, padding=1, bias=False),
+            torch.nn.Conv2d(18, 128, kernel_size=3, padding=1, bias=False),
             torch.nn.BatchNorm2d(128),
             torch.nn.ReLU(inplace=True),
         )
