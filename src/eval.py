@@ -2,7 +2,7 @@ import os
 import torch
 
 from libs.encoding import fen2tensor
-from libs.model import Model
+from libs.model import EvalOnlyModel
 
 
 def main():
@@ -18,7 +18,7 @@ def main():
     print(f"[✓] Using device: {device}")
 
     best_checkpoint_path = "model-best.pth"
-    model = Model()
+    model = EvalOnlyModel()
     model.to(device)
 
     if os.path.exists("BEST_CHECKPOINT_PATH"):

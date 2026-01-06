@@ -2,10 +2,12 @@ import chess
 import torch
 
 from libs.encoding import board2tensor
-from libs.model import Model
+from libs.model import EvalOnlyModel
 
 
-def board2score(board: chess.Board, model: Model, device: torch.device) -> float:
+def board2score(
+    board: chess.Board, model: EvalOnlyModel, device: torch.device
+) -> float:
     input_tensor = board2tensor(board)
     input_tensor = input_tensor.unsqueeze(0)
     input_tensor = input_tensor.to(device)
@@ -17,7 +19,7 @@ def board2score(board: chess.Board, model: Model, device: torch.device) -> float
 
 
 def boards2scores(
-    boards: list[chess.Board], model: Model, device: torch.device
+    boards: list[chess.Board], model: EvalOnlyModel, device: torch.device
 ) -> list[float]:
     input_tensors = torch.stack([board2tensor(board) for board in boards])
     input_tensors = input_tensors.to(device)

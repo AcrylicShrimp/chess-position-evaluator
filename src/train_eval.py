@@ -1,49 +1,27 @@
 import os
 import torch
-from chess_dataset import ChessDataset, worker_init_fn
-from model import Model
-from train import Trainer
 from torch.utils.tensorboard import SummaryWriter
 
-
-def load_eval_weights(model: Model, eval_checkpoint_path: str):
-    checkpoint = torch.load(eval_checkpoint_path, map_location="cpu")
-    model_dict = model.state_dict()
-    eval_model_dict = checkpoint["model"]
-
-    for name, param in eval_model_dict.items():
-        if name.startswith("cp_head"):
-            name = name.replace("cp_head", "eval_head")
-
-        if name in model_dict:
-            model_dict[name] = param
-            print(f"[✓] Loaded parameter '{name}' from {eval_checkpoint_path}")
-
-    model.load_state_dict(model_dict, strict=False)
-    print(f"[✓] Loaded evaluation weights from {eval_checkpoint_path}")
+from libs.dataset import ChessEvaluationDataset
+from libs.model import EvalOnlyModel
+from train_eval.trainer import Trainer
 
 
-def freeze_eval_weights(model: Model):
-    layers = [model.initial_block, model.residual_blocks, model.gap, model.eval_head]
-
-    for layer in layers:
-        for param in layer.parameters():
-            param.requires_grad = False
-
-    print("[✓] Frozen evaluation weights")
+def worker_init_fn(_: int):
+    worker_info = torch.utils.data.get_worker_info()
+    worker_info.dataset.open_file()
 
 
 def main():
-    print("=== Transfer: Evaluation >>> Policy ===")
+    print("=== Train Evaluation ===")
     print(f"[✓] Using torch version: {torch.__version__}")
 
     train_data_path = "train.chesseval"
     validation_data_path = "validation.chesseval"
     checkpoint_path = "model.pth"
-    best_checkpoint_path = "best_model.pth"
-    eval_checkpoint_path = "eval_model.pth"
+    best_checkpoint_path = "model-best.pth"
     tensorboard_path = "tensorboard/chess-ai"
-    batch_size = 64
+    batch_size = 8 * 1024
     epochs = 100000
     steps_per_epoch = 1024
 
@@ -63,14 +41,11 @@ def main():
 
     print(f"[✓] Using device: {device}")
 
-    model = Model()
-    load_eval_weights(model, eval_checkpoint_path)
-    freeze_eval_weights(model)
-
+    model = EvalOnlyModel()
     trainer = Trainer(model, device)
     trainer.load_checkpoint(checkpoint_path)
 
-    train_data = ChessDataset(
+    train_data = ChessEvaluationDataset(
         train_data_path,
     )
     train_data_loader = torch.utils.data.DataLoader(
@@ -83,7 +58,7 @@ def main():
         worker_init_fn=worker_init_fn,
     )
 
-    validation_data = ChessDataset(
+    validation_data = ChessEvaluationDataset(
         validation_data_path,
     )
     validation_data_loader = torch.utils.data.DataLoader(

@@ -2,15 +2,16 @@ import itertools
 import os
 import signal
 import torch
-from model import Model
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+
+from libs.model import EvalOnlyModel
 
 
 class Trainer:
     def __init__(
         self,
-        model: Model,
+        model: EvalOnlyModel,
         device: torch.device,
     ):
         self.model = model

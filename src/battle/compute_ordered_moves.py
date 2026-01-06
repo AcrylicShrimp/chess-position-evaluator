@@ -2,12 +2,12 @@ import chess
 import torch
 
 from libs.scoring import boards2scores
-from libs.model import Model
+from libs.model import EvalOnlyModel
 
 
 def compute_ordered_moves(
     board: chess.Board,
-    model: Model,
+    model: EvalOnlyModel,
     device: torch.device,
 ) -> list[chess.Move]:
     boards: list[chess.Board] = []

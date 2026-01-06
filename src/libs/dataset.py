@@ -1,7 +1,28 @@
 import numpy as np
 import struct
-from typing import BinaryIO
 import torch
+from typing import BinaryIO
+
+from libs.encoding import bitboards2tensors, boolean2tensor
+
+
+class ChessEvaluationDataset(torch.utils.data.Dataset):
+    def __init__(self, path: str):
+        self.path = path
+        self.mm = None
+
+        with open(path, "rb") as file:
+            self.len = read_chess_evaluation_length(file)
+
+    def open_file(self):
+        self.mm = np.memmap(self.path, dtype=np.uint8, offset=8, mode="r")
+
+    def __len__(self) -> int:
+        return self.len
+
+    def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor]:
+        row = self.mm[index * 109 : (index + 1) * 109]
+        return read_chess_evaluation(row.tobytes())
 
 
 def read_chess_evaluation_length(file: BinaryIO) -> int:
@@ -19,14 +40,13 @@ def read_chess_evaluation(
     our_queenside_castling_rights = boolean2tensor(bitflags & 4 == 4)
     their_kingside_castling_rights = boolean2tensor(bitflags & 8 == 8)
     their_queenside_castling_rights = boolean2tensor(bitflags & 16 == 16)
-    bitboards = bitboard2tensors(
+    bitboards = bitboards2tensors(
         [
             player_en_passant,
             *pieces,
         ]
     )
 
-    # 4. create the input tensor
     input = torch.vstack(
         [
             am_i_black_color,
@@ -37,19 +57,6 @@ def read_chess_evaluation(
             bitboards,
         ]
     )
-
-    # 5. create the label tensor
     label = torch.tensor([win_prob], dtype=torch.float32)
 
     return input, label
-
-
-def boolean2tensor(boolean: bool) -> torch.Tensor:
-    return torch.full((1, 8, 8), 1.0 if boolean else 0.0, dtype=torch.float32)
-
-
-def bitboard2tensors(bitboards: list[int]) -> torch.Tensor:
-    unpacked = np.unpackbits(
-        np.array(bitboards, dtype="<u8").view(np.uint8), bitorder="little"
-    )
-    return torch.from_numpy(unpacked).view(len(bitboards), 8, 8).float()
