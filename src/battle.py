@@ -2,9 +2,11 @@ import chess
 import os
 import random
 import torch
-from battle.board2score import board2score
+
+from libs.scoring import board2score
+from libs.model import Model
+
 from battle.negamax import find_best_move
-from model import Model
 
 
 def make_ai_move(board: chess.Board, model: Model, device: torch.device) -> chess.Move:

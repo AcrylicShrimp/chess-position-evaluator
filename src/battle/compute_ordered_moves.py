@@ -1,7 +1,8 @@
 import chess
 import torch
-from battle.board2score import boards2scores
-from model import Model
+
+from libs.scoring import boards2scores
+from libs.model import Model
 
 
 def compute_ordered_moves(
@@ -24,4 +25,5 @@ def compute_ordered_moves(
         key=lambda move: move[1],
         reverse=board.turn == chess.WHITE,
     )
+
     return [move for move, _ in sorted_moves][:10]

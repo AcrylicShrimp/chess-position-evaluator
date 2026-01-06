@@ -45,17 +45,17 @@ class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.initial_block = torch.nn.Sequential(
-            torch.nn.Conv2d(20, 64, kernel_size=3, padding=1, bias=False),
-            torch.nn.BatchNorm2d(64),
+            torch.nn.Conv2d(18, 128, kernel_size=3, padding=1, bias=False),
+            torch.nn.BatchNorm2d(128),
             torch.nn.ReLU(inplace=True),
         )
 
         self.residual_blocks = torch.nn.Sequential(
-            *[ResidualBlock(64) for _ in range(20)],
+            *[ResidualBlock(128) for _ in range(6)],
         )
 
         self.value_head = torch.nn.Sequential(
-            torch.nn.Conv2d(64, 32, kernel_size=1, bias=False),
+            torch.nn.Conv2d(128, 32, kernel_size=1, bias=False),
             torch.nn.BatchNorm2d(32),
             torch.nn.ReLU(inplace=True),
             torch.nn.Flatten(),
