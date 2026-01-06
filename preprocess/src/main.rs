@@ -89,7 +89,7 @@ async fn create_temp_table(
                     SELECT fen, unnest(evals) as eval
                     FROM read_json_auto(?1)
                 )
-                WHERE 10 <= eval.depth 
+                WHERE 24 <= eval.depth 
                   AND array_length(eval.pvs) != 0
             )
             WHERE (pvs.cp IS NOT NULL OR pvs.mate IS NOT NULL)
