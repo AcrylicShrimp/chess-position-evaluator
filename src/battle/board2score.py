@@ -54,12 +54,17 @@ def compute_black_attacks(board: chess.Board) -> chess.Bitboard:
 
 def board2tensor(board: chess.Board) -> torch.Tensor:
     turn_tensor = boolean2tensor(board.turn == chess.WHITE)
-    wk_castle_tensor = boolean2tensor(board.has_kingside_castling_rights(chess.WHITE))
-    wq_castle_tensor = boolean2tensor(board.has_queenside_castling_rights(chess.WHITE))
-    bk_castle_tensor = boolean2tensor(board.has_kingside_castling_rights(chess.BLACK))
-    bq_castle_tensor = boolean2tensor(board.has_queenside_castling_rights(chess.BLACK))
+    wk_castle_tensor = boolean2tensor(
+        board.has_kingside_castling_rights(chess.WHITE))
+    wq_castle_tensor = boolean2tensor(
+        board.has_queenside_castling_rights(chess.WHITE))
+    bk_castle_tensor = boolean2tensor(
+        board.has_kingside_castling_rights(chess.BLACK))
+    bq_castle_tensor = boolean2tensor(
+        board.has_queenside_castling_rights(chess.BLACK))
 
-    en_passant_bb = (1 << board.ep_square) if board.ep_square is not None else 0
+    en_passant_bb = (
+        1 << board.ep_square) if board.ep_square is not None else 0
     white_attacks_bb = compute_white_attacks(board)
     black_attacks_bb = compute_black_attacks(board)
     pieces_bb = [
@@ -68,7 +73,8 @@ def board2tensor(board: chess.Board) -> torch.Tensor:
         for piece_type in chess.PIECE_TYPES
     ]
 
-    all_bitboards = [en_passant_bb, white_attacks_bb, black_attacks_bb, *pieces_bb]
+    all_bitboards = [en_passant_bb, white_attacks_bb,
+                     black_attacks_bb, *pieces_bb]
     bitboard_tensors = bitboard2tensors(all_bitboards)
 
     input_tensor = torch.cat(
@@ -93,7 +99,8 @@ def board2score(board: chess.Board, model: Model, device: torch.device) -> float
 
     with torch.no_grad():
         output = model(input_tensor)
-        return output[0, 0].item()
+        score = output[0, 0].cpu().sigmoid().item()
+        return override_score_with_status(score, board)
 
 
 def boards2scores(
@@ -104,4 +111,16 @@ def boards2scores(
 
     with torch.no_grad():
         outputs = model(input_tensors)
-        return outputs[:, 0].tolist()
+        scores = outputs[:, 0].cpu().sigmoid().tolist()
+        return [override_score_with_status(score, board) for score, board in zip(scores, boards)]
+
+
+def override_score_with_status(score: float, board: chess.Board) -> float:
+    if board.is_checkmate():
+        return float("inf") if board.turn == chess.WHITE else float("-inf")
+    if board.is_stalemate():
+        return 0
+    if board.is_insufficient_material():
+        return 0
+
+    return score
