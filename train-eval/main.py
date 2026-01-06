@@ -66,8 +66,7 @@ def main():
     )
 
     print(f"[✓] Data loaded from {train_data_path} ({len(train_data)} rows)")
-    print(
-        f"[✓] Data loaded from {validation_data_path} ({len(validation_data)} rows)")
+    print(f"[✓] Data loaded from {validation_data_path} ({len(validation_data)} rows)")
 
     with SummaryWriter(tensorboard_path) as writer:
         print(f"[✓] Tensorboard writer initialized at {tensorboard_path}")
