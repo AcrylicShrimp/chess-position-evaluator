@@ -86,7 +86,7 @@ fn process_chunk(
 
 fn construct_chunk(chunk: Vec<ChessEvaluationRow>) -> (usize, Vec<u8>) {
     let mut row_count = 0;
-    let mut bytes = Vec::with_capacity((121 + 4) * chunk.len());
+    let mut bytes = Vec::with_capacity((105 + 4) * chunk.len());
 
     for row in chunk {
         let board = match Board::from_str(&row.fen) {
@@ -96,25 +96,35 @@ fn construct_chunk(chunk: Vec<ChessEvaluationRow>) -> (usize, Vec<u8>) {
                 continue;
             }
         };
+        let us = board.side_to_move();
+        let them = !us;
 
-        // input: 121 bytes
-        let bitflags = compute_bitflags(&board);
-        let player_en_passant = compute_player_en_passant(&board);
-        let white_attacks = compute_white_attacks(&board);
-        let black_attacks = compute_black_attacks(&board);
-        let pieces = compute_pieces(&board);
+        // input: 105 bytes
+        let bitflags = compute_bitflags(&board, us, them);
+        let mut player_en_passant = compute_player_en_passant(&board);
+        let mut pieces = compute_pieces(&board, us, them);
+
+        if us == Color::Black {
+            fn flip_vertical(bitboard: BitBoard) -> BitBoard {
+                let mut bytes = bitboard.0.to_ne_bytes();
+                bytes.reverse();
+                BitBoard(u64::from_ne_bytes(bytes))
+            }
+
+            player_en_passant = flip_vertical(player_en_passant);
+            pieces = pieces.map(flip_vertical);
+        }
 
         bytes.extend(bitflags.to_le_bytes());
         bytes.extend(player_en_passant.0.to_le_bytes());
-        bytes.extend(white_attacks.0.to_le_bytes());
-        bytes.extend(black_attacks.0.to_le_bytes());
 
         for piece in pieces {
             bytes.extend(piece.0.to_le_bytes());
         }
 
         // label: 4 bytes
-        let win_prob = centipawn_to_win_prob(row.cp);
+        let relative_cp = if us == Color::White { row.cp } else { -row.cp };
+        let win_prob = centipawn_to_win_prob(relative_cp);
         bytes.extend(win_prob.to_le_bytes());
 
         row_count += 1;
@@ -123,30 +133,30 @@ fn construct_chunk(chunk: Vec<ChessEvaluationRow>) -> (usize, Vec<u8>) {
     (row_count, bytes)
 }
 
-fn compute_bitflags(board: &Board) -> u8 {
+fn compute_bitflags(board: &Board, us: Color, them: Color) -> u8 {
     let mut bitflags = 0;
 
-    if board.side_to_move() == Color::White {
+    if us == Color::Black {
         bitflags |= 1 << 0;
     }
 
-    let white_castle_rights = board.castle_rights(Color::White);
+    let our_castle_rights = board.castle_rights(us);
 
-    if white_castle_rights.has_kingside() {
+    if our_castle_rights.has_kingside() {
         bitflags |= 1 << 1;
     }
 
-    if white_castle_rights.has_queenside() {
+    if our_castle_rights.has_queenside() {
         bitflags |= 1 << 2;
     }
 
-    let black_castle_rights = board.castle_rights(Color::Black);
+    let their_castle_rights = board.castle_rights(them);
 
-    if black_castle_rights.has_kingside() {
+    if their_castle_rights.has_kingside() {
         bitflags |= 1 << 3;
     }
 
-    if black_castle_rights.has_queenside() {
+    if their_castle_rights.has_queenside() {
         bitflags |= 1 << 4;
     }
 
@@ -160,94 +170,19 @@ fn compute_player_en_passant(board: &Board) -> BitBoard {
     }
 }
 
-fn compute_white_attacks(board: &Board) -> BitBoard {
-    compute_attack_map(board, Color::White)
-}
-
-fn compute_black_attacks(board: &Board) -> BitBoard {
-    compute_attack_map(board, Color::Black)
-}
-
-fn compute_pieces(board: &Board) -> [BitBoard; 12] {
+fn compute_pieces(board: &Board, us: Color, them: Color) -> [BitBoard; 12] {
     [
-        *board.pieces(Piece::Pawn) & *board.color_combined(Color::White),
-        *board.pieces(Piece::Knight) & *board.color_combined(Color::White),
-        *board.pieces(Piece::Bishop) & *board.color_combined(Color::White),
-        *board.pieces(Piece::Rook) & *board.color_combined(Color::White),
-        *board.pieces(Piece::Queen) & *board.color_combined(Color::White),
-        *board.pieces(Piece::King) & *board.color_combined(Color::White),
-        *board.pieces(Piece::Pawn) & *board.color_combined(Color::Black),
-        *board.pieces(Piece::Knight) & *board.color_combined(Color::Black),
-        *board.pieces(Piece::Bishop) & *board.color_combined(Color::Black),
-        *board.pieces(Piece::Rook) & *board.color_combined(Color::Black),
-        *board.pieces(Piece::Queen) & *board.color_combined(Color::Black),
-        *board.pieces(Piece::King) & *board.color_combined(Color::Black),
+        *board.pieces(Piece::Pawn) & *board.color_combined(us),
+        *board.pieces(Piece::Knight) & *board.color_combined(us),
+        *board.pieces(Piece::Bishop) & *board.color_combined(us),
+        *board.pieces(Piece::Rook) & *board.color_combined(us),
+        *board.pieces(Piece::Queen) & *board.color_combined(us),
+        *board.pieces(Piece::King) & *board.color_combined(us),
+        *board.pieces(Piece::Pawn) & *board.color_combined(them),
+        *board.pieces(Piece::Knight) & *board.color_combined(them),
+        *board.pieces(Piece::Bishop) & *board.color_combined(them),
+        *board.pieces(Piece::Rook) & *board.color_combined(them),
+        *board.pieces(Piece::Queen) & *board.color_combined(them),
+        *board.pieces(Piece::King) & *board.color_combined(them),
     ]
-}
-
-fn compute_attack_map(board: &Board, color: Color) -> BitBoard {
-    let mut attack_map = EMPTY;
-    let occupied = *board.combined();
-
-    for piece_square in *board.color_combined(color) {
-        let piece = board.piece_on(piece_square);
-        let piece = match piece {
-            Some(piece) => piece,
-            None => {
-                continue;
-            }
-        };
-
-        let attacks = match piece {
-            Piece::Pawn => {
-                chess::get_pawn_attacks(piece_square, color, BitBoard(0xffffffffffffffff))
-            }
-            Piece::Knight => chess::get_knight_moves(piece_square),
-            Piece::Bishop => chess::get_bishop_moves(piece_square, occupied),
-            Piece::Rook => chess::get_rook_moves(piece_square, occupied),
-            Piece::Queen => {
-                chess::get_bishop_moves(piece_square, occupied)
-                    | chess::get_rook_moves(piece_square, occupied)
-            }
-            Piece::King => chess::get_king_moves(piece_square),
-        };
-
-        attack_map |= attacks;
-    }
-
-    attack_map
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use chess::{ALL_FILES, ALL_RANKS, Square};
-
-    fn visualize_bitboard(bitboard: BitBoard) {
-        for rank in ALL_RANKS.iter().rev() {
-            for file in ALL_FILES {
-                let square = Square::make_square(*rank, file);
-                if (bitboard & BitBoard::from_square(square)) != EMPTY {
-                    print!("1");
-                } else {
-                    print!("0");
-                }
-            }
-            println!();
-        }
-    }
-
-    #[test]
-    fn test_compute_attack_map() {
-        let board =
-            Board::from_str("rnbqkbnr/ppppp3/6pp/4p3/3P4/3B4/PPP2PPP/RNBQK1NR w KQkq - 0 5")
-                .unwrap();
-
-        let white_attacks = compute_attack_map(&board, Color::White);
-        let black_attacks = compute_attack_map(&board, Color::Black);
-
-        visualize_bitboard(white_attacks);
-        println!("--------------------------------");
-        visualize_bitboard(black_attacks);
-    }
 }
