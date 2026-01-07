@@ -1,0 +1,13 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.dependencies]
+anyhow = "1"
+chess = "3"
+criterion = "0.8"
+duckdb = "1"
+ndarray = "0.17"
+ort = "2.0.0-rc.11"
+rayon = "1"
+tokio = "1"

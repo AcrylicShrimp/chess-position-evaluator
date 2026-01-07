@@ -1,0 +1,21 @@
+[package]
+name = "onnx-backend-benchmark"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { workspace = true }
+ndarray = { workspace = true }
+ort = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "inference"
+harness = false
+
+[features]
+default = ["xnnpack"]
+xnnpack = ["ort/xnnpack"]
+coreml = ["ort/coreml"]

@@ -1,0 +1,11 @@
+[package]
+name = "preprocess"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow.workspace = true
+chess.workspace = true
+duckdb = { workspace = true, features = ["json"] }
+rayon.workspace = true
+tokio = { workspace = true, features = ["full"] }
