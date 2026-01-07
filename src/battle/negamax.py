@@ -5,7 +5,10 @@ import torch
 from libs.scoring import board2score
 from libs.model import EvalOnlyModel
 
-from battle.compute_ordered_moves import compute_ordered_moves
+from battle.compute_ordered_moves import (
+    compute_ordered_moves,
+    compute_ordered_moves_fast,
+)
 
 
 MATE_SCORE = 1000.0
@@ -24,6 +27,9 @@ def prob_to_score(prob: float) -> float:
     return (prob - 0.5) * 2
 
 
+transposition_table = {}
+
+
 def negamax(
     board: chess.Board,
     model: EvalOnlyModel,
@@ -32,26 +38,25 @@ def negamax(
     alpha: float,
     beta: float,
 ) -> float:
+    board_fen = board.fen()
+    state_key = (board_fen, depth)
+
+    if state_key in transposition_table:
+        return transposition_table[state_key]
+
     outcome = board.outcome(claim_draw=True)
+
     if outcome is not None:
-        if outcome.winner is None:
-            return DRAW_SCORE
-        else:
-            if outcome.winner == board.turn:
-                return MATE_SCORE
-            else:
-                return -MATE_SCORE
+        return DRAW_SCORE
 
     if depth == 0:
         white_win_prob = board2score(board, model, device)
+        score = prob_to_score(
+            white_win_prob if board.turn == chess.WHITE else 1.0 - white_win_prob
+        )
+        return score
 
-        if board.turn == chess.WHITE:
-            return prob_to_score(white_win_prob)
-        else:
-            black_win_prob = 1.0 - white_win_prob
-            return prob_to_score(black_win_prob)
-
-    moves = compute_ordered_moves(board, model, device)
+    moves = compute_ordered_moves_fast(board)
 
     if not moves and board.legal_moves.count() > 0:
         moves = list(board.legal_moves)
@@ -68,6 +73,8 @@ def negamax(
 
         if alpha >= beta:
             break
+
+    transposition_table[state_key] = max_val
 
     return max_val
 

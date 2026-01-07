@@ -26,4 +26,24 @@ def compute_ordered_moves(
         reverse=board.turn == chess.WHITE,
     )
 
-    return [move for move, _ in sorted_moves][:10]
+    return [move for move, _ in sorted_moves]
+
+
+def compute_ordered_moves_fast(board: chess.Board) -> list[chess.Move]:
+    moves = list(board.legal_moves)
+
+    def move_score(move: chess.Move):
+        score = 0
+
+        if board.is_capture(move):
+            victim_piece = board.piece_type_at(move.to_square)
+            if victim_piece:
+                score += 10 * victim_piece
+
+        if move.promotion:
+            score += 90
+
+        return score
+
+    moves.sort(key=move_score, reverse=True)
+    return moves

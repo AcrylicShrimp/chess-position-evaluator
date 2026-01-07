@@ -12,7 +12,7 @@ from battle.negamax import find_best_move
 def make_ai_move(
     board: chess.Board, model: EvalOnlyModel, device: torch.device
 ) -> chess.Move:
-    return find_best_move(board, model, device, 4)
+    return find_best_move(board, model, device, 6)
 
 
 def make_player_move(board: chess.Board) -> chess.Move:
