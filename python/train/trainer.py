@@ -26,9 +26,11 @@ class Trainer:
         self.model = model
         self.device = device
         self.experiment_name = experiment_name
-        self.enable_amp = device.type != "cpu"
+        self.enable_amp = device.type == "cuda" and not torch.cuda.is_bf16_supported(
+            False)
 
-        self.optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
+        self.optimizer = torch.optim.AdamW(
+            model.parameters(), lr=lr, weight_decay=wd)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, mode="min", factor=factor, patience=patience
         )
@@ -107,7 +109,7 @@ class Trainer:
         epochs: int,
         steps_per_epoch: int,
     ):
-        torch.set_float32_matmul_precision("high")
+        torch.set_float32_matmul_precision("medium")
 
         try:
             for epoch in range(self.epoch, epochs):
@@ -130,7 +132,8 @@ class Trainer:
                     with torch.autocast(
                         device_type=self.device.type,
                         enabled=self.enable_amp,
-                        dtype=torch.bfloat16 if self.device.type == "cuda" else None,
+                        dtype=torch.bfloat16 if self.device.type == "cuda" and torch.cuda.is_bf16_supported(
+                            False) else None,
                     ):
                         output = self.model(input)
                         loss = compute_loss(output, label)
@@ -171,7 +174,8 @@ class Trainer:
                     checkpoint_path,
                     epoch,
                 )
-                print(f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
+                print(
+                    f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
 
                 self.model.eval()
 

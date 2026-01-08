@@ -3,6 +3,31 @@ import torch
 from libs.movement import TOTAL_MOVES
 
 
+class AddCoords(torch.nn.Module):
+    def __init__(self, height, width):
+        super().__init__()
+        y_coords = (
+            2.0
+            * torch.arange(height).unsqueeze(1).expand(height, width)
+            / (height - 1.0)
+            - 1.0
+        )
+        x_coords = (
+            2.0 * torch.arange(width).unsqueeze(0).expand(height,
+                                                          width) / (width - 1.0)
+            - 1.0
+        )
+        coords = torch.stack((y_coords, x_coords), dim=0).unsqueeze(0)
+
+        self.register_buffer("coords", coords)
+
+    def forward(self, x):
+        batch_size = x.shape[0]
+        coords_batch = self.coords.expand(batch_size, -1, -1, -1)
+        coords_batch = coords_batch.to(dtype=x.dtype, device=x.device)
+        return torch.cat([x, coords_batch], dim=1)
+
+
 class DepthwiseSeparableConv(torch.nn.Module):
     def __init__(self, in_channels, out_channels, stride=1):
         super().__init__()
@@ -44,29 +69,6 @@ class ResidualBlock(torch.nn.Module):
         out = self.relu2(out)
 
         return out
-
-
-class AddCoords(torch.nn.Module):
-    def __init__(self, height, width):
-        super().__init__()
-        y_coords = (
-            2.0
-            * torch.arange(height).unsqueeze(1).expand(height, width)
-            / (height - 1.0)
-            - 1.0
-        )
-        x_coords = (
-            2.0 * torch.arange(width).unsqueeze(0).expand(height, width) / (width - 1.0)
-            - 1.0
-        )
-        coords = torch.stack((y_coords, x_coords), dim=0).unsqueeze(0)
-
-        self.register_buffer("coords", coords)
-
-    def forward(self, x):
-        batch_size = x.shape[0]
-        coords_batch = self.coords.expand(batch_size, -1, -1, -1)
-        return torch.cat([x, coords_batch], dim=1)
 
 
 class ModelFull(torch.nn.Module):
