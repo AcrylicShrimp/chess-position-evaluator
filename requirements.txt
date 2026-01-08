@@ -1,5 +1,7 @@
 chess
 numpy
+onnx
+onnxruntime
 standard-imghdr
 tensorboard
 tqdm

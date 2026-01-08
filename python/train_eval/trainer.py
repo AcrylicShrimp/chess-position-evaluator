@@ -19,10 +19,10 @@ class Trainer:
         self.enable_amp = device.type != "cpu"
 
         self.optimizer = torch.optim.AdamW(
-            model.parameters(), lr=1e-3, weight_decay=1e-4
+            model.parameters(), lr=5e-4, weight_decay=1e-4
         )
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode="min", factor=0.5, patience=10
+            self.optimizer, mode="min", factor=0.5, patience=3
         )
         self.grad_scaler = torch.amp.GradScaler()
 
