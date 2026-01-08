@@ -17,8 +17,9 @@ def run_training(
     batch_size: int,
     lr: float,
     wd: float,
-    patience: int,
-    factor: float,
+    t0: int,
+    t_mult: float,
+    eta_min: float,
     grad_clip: float,
     resume: bool,
     train_workers: int = 4,
@@ -47,7 +48,9 @@ def run_training(
         f"[✓] Hyperparameters: epochs={epochs}, steps={steps_per_epoch}, batch={batch_size}"
     )
     print(f"[✓] Optimizer: lr={lr}, wd={wd}")
-    print(f"[✓] Scheduler: patience={patience}, factor={factor}")
+    print(
+        f"[✓] Scheduler: CosineAnnealingWarmRestarts (T0={t0}, T_mult={t_mult}, eta_min={eta_min})"
+    )
     print(f"[✓] Grad clip: {grad_clip}")
     print(
         f"[✓] DataLoader workers: train={train_workers}, val={val_workers} | Upload checkpoints: {upload_checkpoints}"
@@ -60,8 +63,9 @@ def run_training(
         experiment_name=experiment_name,
         lr=lr,
         wd=wd,
-        patience=patience,
-        factor=factor,
+        t0=t0,
+        t_mult=t_mult,
+        eta_min=eta_min,
         epochs=epochs,
         steps_per_epoch=steps_per_epoch,
         batch_size=batch_size,

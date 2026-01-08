@@ -37,11 +37,20 @@ def train(
     batch: int = typer.Option(..., help="Batch size"),
     lr: float = typer.Option(..., help="Learning rate"),
     wd: float = typer.Option(..., help="Weight decay"),
-    patience: int = typer.Option(
-        ..., help="Scheduler patience (epochs before LR reduction)"
+    t0: int = typer.Option(
+        10,
+        min=1,
+        help="Scheduler T_0 (epochs before first restart) for CosineAnnealingWarmRestarts",
     ),
-    factor: float = typer.Option(
-        ..., help="Scheduler factor (LR multiplier on plateau)"
+    t_mult: float = typer.Option(
+        2.0,
+        min=1.0,
+        help="Scheduler T_mult (restart period multiplier) for CosineAnnealingWarmRestarts",
+    ),
+    eta_min: float = typer.Option(
+        1e-6,
+        min=0.0,
+        help="Scheduler minimum learning rate for CosineAnnealingWarmRestarts",
     ),
     grad_clip: float = typer.Option(
         1.0, help="Max grad norm for clipping (passed to clip_grad_norm_)"
@@ -92,8 +101,9 @@ def train(
         batch_size=batch,
         lr=lr,
         wd=wd,
-        patience=patience,
-        factor=factor,
+        t0=t0,
+        t_mult=t_mult,
+        eta_min=eta_min,
         grad_clip=grad_clip,
         resume=resume,
         train_workers=train_workers,
@@ -104,7 +114,8 @@ def train(
 
 @app.command("analyze-rank")
 def analyze_rank(
-    model_name: str = typer.Argument(..., help="Model name (without .pth extension)"),
+    model_name: str = typer.Argument(...,
+                                     help="Model name (without .pth extension)"),
 ):
     """Analyze activation rank to check model capacity."""
     from analyze_rank import run_analyze_rank
@@ -114,7 +125,8 @@ def analyze_rank(
 
 @app.command()
 def eval(
-    model_name: str = typer.Argument(..., help="Model name (without .pth extension)"),
+    model_name: str = typer.Argument(...,
+                                     help="Model name (without .pth extension)"),
 ):
     """Interactive FEN evaluation."""
     from eval import run_eval
@@ -124,7 +136,8 @@ def eval(
 
 @app.command("export-onnx")
 def export_onnx(
-    model_name: str = typer.Argument(..., help="Model name (without .pth extension)"),
+    model_name: str = typer.Argument(...,
+                                     help="Model name (without .pth extension)"),
 ):
     """Export model to ONNX format."""
     from export_onnx import run_export_onnx

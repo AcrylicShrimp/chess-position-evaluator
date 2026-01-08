@@ -17,8 +17,9 @@ class Trainer:
         experiment_name: str,
         lr: float,
         wd: float,
-        patience: int,
-        factor: float,
+        t0: int,
+        t_mult: float,
+        eta_min: float,
         epochs: int,
         steps_per_epoch: int,
         batch_size: int,
@@ -41,8 +42,8 @@ class Trainer:
 
         self.optimizer = torch.optim.AdamW(
             model.parameters(), lr=lr, weight_decay=wd)
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode="min", factor=factor, patience=patience
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            self.optimizer, T_0=t0, T_mult=t_mult, eta_min=eta_min
         )
         self.grad_scaler = torch.amp.GradScaler(
             enabled=self.enable_grad_scaler)
@@ -69,8 +70,10 @@ class Trainer:
             config={
                 "lr": lr,
                 "wd": wd,
-                "patience": patience,
-                "factor": factor,
+                "scheduler": "CosineAnnealingWarmRestarts",
+                "scheduler_t0": t0,
+                "scheduler_t_mult": t_mult,
+                "scheduler_eta_min": eta_min,
                 "epochs": epochs,
                 "steps_per_epoch": steps_per_epoch,
                 "batch_size": batch_size,
@@ -235,7 +238,8 @@ class Trainer:
 
                 print(f"[✓] Validation Loss: {avg_validation_loss:.4f}")
 
-                self.scheduler.step(avg_validation_loss)
+                # Step cosine scheduler per epoch
+                self.scheduler.step(epoch + 1)
 
                 if avg_validation_loss < self.best_validation_loss:
                     self.best_validation_loss = avg_validation_loss
