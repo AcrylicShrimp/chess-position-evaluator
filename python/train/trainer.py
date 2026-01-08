@@ -100,9 +100,7 @@ class Trainer:
 
         print(f"[✓] Loaded checkpoint from {checkpoint_path}")
 
-    def save_checkpoint(
-        self, checkpoint_path: str, epoch: int, aliases: list[str] | None = None
-    ):
+    def save_checkpoint(self, checkpoint_path: str, epoch: int):
         torch.save(
             {
                 "model": self.model.state_dict(),
@@ -113,15 +111,6 @@ class Trainer:
                 "epoch": epoch,
             },
             checkpoint_path,
-        )
-        if aliases is None:
-            aliases = [
-                "latest",
-                f"epoch-{epoch + 1}",
-            ]
-        self._upload_checkpoint(
-            checkpoint_path,
-            aliases=aliases,
         )
 
     def _upload_checkpoint(self, checkpoint_path: str, aliases: list[str]):
@@ -212,10 +201,7 @@ class Trainer:
                         print("[!] Stopping training (Ctrl+C pressed)")
                         os._exit(0)
 
-                self.save_checkpoint(
-                    checkpoint_path,
-                    epoch,
-                )
+                self.save_checkpoint(checkpoint_path, epoch)
                 print(
                     f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
 
@@ -253,9 +239,9 @@ class Trainer:
 
                 if avg_validation_loss < self.best_validation_loss:
                     self.best_validation_loss = avg_validation_loss
-                    self.save_checkpoint(
+                    self.save_checkpoint(best_checkpoint_path, epoch + 1)
+                    self._upload_checkpoint(
                         best_checkpoint_path,
-                        epoch + 1,
                         aliases=[
                             "best",
                             f"epoch-{epoch + 1}",
