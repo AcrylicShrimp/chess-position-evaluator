@@ -36,11 +36,13 @@ class Trainer:
             device.type == "cuda" and not torch.cuda.is_bf16_supported(False)
         )
 
-        self.optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
+        self.optimizer = torch.optim.AdamW(
+            model.parameters(), lr=lr, weight_decay=wd)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, mode="min", factor=factor, patience=patience
         )
-        self.grad_scaler = torch.amp.GradScaler(enabled=self.enable_grad_scaler)
+        self.grad_scaler = torch.amp.GradScaler(
+            enabled=self.enable_grad_scaler)
 
         self.model.to(self.device)
 
@@ -144,6 +146,11 @@ class Trainer:
                         loss = compute_loss(output, label)
 
                     self.grad_scaler.scale(loss).backward()
+                    self.grad_scaler.unscale_(self.optimizer)
+
+                    grad_norm = torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(), max_norm=1.0)
+
                     self.grad_scaler.step(self.optimizer)
                     self.grad_scaler.update()
 
@@ -156,6 +163,7 @@ class Trainer:
                         {
                             "train/loss": loss,
                             "train/avg_loss": avg_loss,
+                            "train/grad_norm": grad_norm,
                             "train/lr": self.optimizer.param_groups[0]["lr"],
                         },
                         step=global_step,
@@ -175,7 +183,8 @@ class Trainer:
                     checkpoint_path,
                     epoch,
                 )
-                print(f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
+                print(
+                    f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
 
                 self.model.eval()
 
@@ -220,4 +229,4 @@ class Trainer:
 
 
 def compute_loss(output: torch.Tensor, label: torch.Tensor) -> torch.Tensor:
-    return torch.nn.functional.binary_cross_entropy_with_logits(output, label)
+    return torch.nn.functional.binary_cross_entropy_with_logits(output.float(), label.float())
