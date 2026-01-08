@@ -3,6 +3,49 @@ import torch.nn.functional as F
 
 from libs.movement import TOTAL_MOVES
 
+# Order matches chess.PIECE_TYPES (pawn, knight, bishop, rook, queen, king)
+_MATERIAL_VALUES = torch.tensor([1.0, 3.0, 3.0, 5.0, 9.0, 0.0], dtype=torch.float32)
+_MATERIAL_ALPHA = 5.0
+
+
+def _material_feature(
+    x: torch.Tensor,
+    material_weights: torch.Tensor,
+    material_scale: torch.nn.Parameter,
+    material_diff: torch.Tensor | None = None,
+    alpha: float = _MATERIAL_ALPHA,
+) -> torch.Tensor:
+    """
+    Compute (or inject) a normalized material difference feature.
+
+    Args:
+        x: Board tensor shaped [B, 18, 8, 8] (before coords are added).
+        material_weights: Piece values shaped [6].
+        material_scale: Learnable scalar gate.
+        material_diff: Optional precomputed raw material diff (my - enemy),
+            shaped [B] or [B, 1]. If None, it is derived from x.
+        alpha: Normalization factor for tanh.
+
+    Returns:
+        Tensor of shape [B, 1] to concatenate after flattening.
+    """
+    batch = x.shape[0]
+
+    if material_diff is None:
+        # Channels: 0-4 meta, 5 en-passant, 6-11 ours, 12-17 theirs.
+        our_pieces = x[:, 6:12]
+        enemy_pieces = x[:, 12:18]
+        weights = material_weights.to(dtype=x.dtype, device=x.device).view(1, 6, 1, 1)
+        our_score = (our_pieces * weights).sum(dim=(1, 2, 3))
+        enemy_score = (enemy_pieces * weights).sum(dim=(1, 2, 3))
+        diff = our_score - enemy_score
+    else:
+        diff = material_diff.to(device=x.device, dtype=x.dtype).reshape(batch)
+
+    normalized = torch.tanh(diff / alpha)
+    scaled = material_scale * normalized
+    return scaled.unsqueeze(1)
+
 
 class AddCoords(torch.nn.Module):
     def __init__(self, height, width):
@@ -14,8 +57,7 @@ class AddCoords(torch.nn.Module):
             - 1.0
         )
         x_coords = (
-            2.0 * torch.arange(width).unsqueeze(0).expand(height,
-                                                          width) / (width - 1.0)
+            2.0 * torch.arange(width).unsqueeze(0).expand(height, width) / (width - 1.0)
             - 1.0
         )
 
@@ -26,7 +68,8 @@ class AddCoords(torch.nn.Module):
         d2_coords = d2_coords / d2_coords.abs().max()
 
         coords = torch.stack(
-            (y_coords, x_coords, d1_coords, d2_coords), dim=0).unsqueeze(0)
+            (y_coords, x_coords, d1_coords, d2_coords), dim=0
+        ).unsqueeze(0)
 
         self.register_buffer("coords", coords)
 
@@ -66,14 +109,11 @@ class CoordinateAttention(torch.nn.Module):
     def __init__(self, channels: int, reduction: int = 32):
         super().__init__()
         reduced = max(8, channels // reduction)
-        self.reduce = torch.nn.Conv2d(
-            channels, reduced, kernel_size=1, bias=True)
+        self.reduce = torch.nn.Conv2d(channels, reduced, kernel_size=1, bias=True)
         self.bn = torch.nn.BatchNorm2d(reduced)
         self.act = torch.nn.Hardswish(inplace=True)
-        self.attn_h = torch.nn.Conv2d(
-            reduced, channels, kernel_size=1, bias=True)
-        self.attn_w = torch.nn.Conv2d(
-            reduced, channels, kernel_size=1, bias=True)
+        self.attn_h = torch.nn.Conv2d(reduced, channels, kernel_size=1, bias=True)
+        self.attn_w = torch.nn.Conv2d(reduced, channels, kernel_size=1, bias=True)
         self.sigmoid = torch.nn.Sigmoid()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -130,12 +170,18 @@ class ModelFull(torch.nn.Module):
             *[ResidualBlock(64) for _ in range(4)],
         )
 
-        self.value_head = torch.nn.Sequential(
+        # Global material skip: learnable scale on normalized material diff.
+        self.register_buffer("material_weights", _MATERIAL_VALUES)
+        self.material_scale = torch.nn.Parameter(torch.tensor(1.0))
+
+        self.value_conv = torch.nn.Sequential(
             torch.nn.Conv2d(64, 2, kernel_size=1, bias=False),
             torch.nn.BatchNorm2d(2),
             torch.nn.Hardswish(inplace=True),
             torch.nn.Flatten(),
-            torch.nn.Linear(2 * 8 * 8, 64),
+        )
+        self.value_mlp = torch.nn.Sequential(
+            torch.nn.Linear(2 * 8 * 8 + 1, 64),
             torch.nn.Hardswish(inplace=True),
             torch.nn.Linear(64, 1),
         )
@@ -147,19 +193,41 @@ class ModelFull(torch.nn.Module):
             torch.nn.Linear(16 * 8 * 8, TOTAL_MOVES),
         )
 
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self, x: torch.Tensor, material_diff: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        material_feature = _material_feature(
+            x=x,
+            material_weights=self.material_weights,
+            material_scale=self.material_scale,
+            material_diff=material_diff,
+        )
+
         out = self.add_coords(x)
         out = self.initial_block(out)
         out = self.residual_blocks(out)
 
-        return (self.value_head(out), self.policy_head(out))
+        value_flat = self.value_conv(out)
+        value = self.value_mlp(torch.cat([value_flat, material_feature], dim=1))
 
-    def forward_eval(self, x: torch.Tensor) -> torch.Tensor:
+        return value, self.policy_head(out)
+
+    def forward_eval(
+        self, x: torch.Tensor, material_diff: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        material_feature = _material_feature(
+            x=x,
+            material_weights=self.material_weights,
+            material_scale=self.material_scale,
+            material_diff=material_diff,
+        )
+
         out = self.add_coords(x)
         out = self.initial_block(out)
         out = self.residual_blocks(out)
 
-        return self.value_head(out)
+        value_flat = self.value_conv(out)
+        return self.value_mlp(torch.cat([value_flat, material_feature], dim=1))
 
     def forward_policy(self, x: torch.Tensor) -> torch.Tensor:
         out = self.add_coords(x)
@@ -183,19 +251,34 @@ class EvalOnlyModel(torch.nn.Module):
             *[ResidualBlock(64) for _ in range(4)],
         )
 
-        self.value_head = torch.nn.Sequential(
+        self.register_buffer("material_weights", _MATERIAL_VALUES)
+        self.material_scale = torch.nn.Parameter(torch.tensor(1.0))
+
+        self.value_conv = torch.nn.Sequential(
             torch.nn.Conv2d(64, 2, kernel_size=1, bias=False),
             torch.nn.BatchNorm2d(2),
             torch.nn.Hardswish(inplace=True),
             torch.nn.Flatten(),
-            torch.nn.Linear(2 * 8 * 8, 64),
+        )
+        self.value_mlp = torch.nn.Sequential(
+            torch.nn.Linear(2 * 8 * 8 + 1, 64),
             torch.nn.Hardswish(inplace=True),
             torch.nn.Linear(64, 1),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, material_diff: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        material_feature = _material_feature(
+            x=x,
+            material_weights=self.material_weights,
+            material_scale=self.material_scale,
+            material_diff=material_diff,
+        )
+
         out = self.add_coords(x)
         out = self.initial_block(out)
         out = self.residual_blocks(out)
 
-        return self.value_head(out)
+        value_flat = self.value_conv(out)
+        return self.value_mlp(torch.cat([value_flat, material_feature], dim=1))
