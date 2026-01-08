@@ -26,15 +26,21 @@ class Trainer:
         self.model = model
         self.device = device
         self.experiment_name = experiment_name
-        self.enable_amp = device.type == "cuda" and not torch.cuda.is_bf16_supported(
-            False)
+        self.enable_autocast = device.type != "cpu"
+        self.autocast_dtype = (
+            torch.bfloat16
+            if device.type == "cuda" and torch.cuda.is_bf16_supported(False)
+            else torch.float16 if device.type != "cpu" else None
+        )
+        self.enable_grad_scaler = (
+            device.type == "cuda" and not torch.cuda.is_bf16_supported(False)
+        )
 
-        self.optimizer = torch.optim.AdamW(
-            model.parameters(), lr=lr, weight_decay=wd)
+        self.optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, mode="min", factor=factor, patience=patience
         )
-        self.grad_scaler = torch.amp.GradScaler()
+        self.grad_scaler = torch.amp.GradScaler(enabled=self.enable_grad_scaler)
 
         self.model.to(self.device)
 
@@ -131,20 +137,15 @@ class Trainer:
 
                     with torch.autocast(
                         device_type=self.device.type,
-                        enabled=self.enable_amp,
-                        dtype=torch.bfloat16 if self.device.type == "cuda" and torch.cuda.is_bf16_supported(
-                            False) else None,
+                        enabled=self.enable_autocast,
+                        dtype=self.autocast_dtype,
                     ):
                         output = self.model(input)
                         loss = compute_loss(output, label)
 
-                    if self.enable_amp:
-                        self.grad_scaler.scale(loss).backward()
-                        self.grad_scaler.step(self.optimizer)
-                        self.grad_scaler.update()
-                    else:
-                        loss.backward()
-                        self.optimizer.step()
+                    self.grad_scaler.scale(loss).backward()
+                    self.grad_scaler.step(self.optimizer)
+                    self.grad_scaler.update()
 
                     loss = loss.item()
                     loss_acc += loss
@@ -174,8 +175,7 @@ class Trainer:
                     checkpoint_path,
                     epoch,
                 )
-                print(
-                    f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
+                print(f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
 
                 self.model.eval()
 
