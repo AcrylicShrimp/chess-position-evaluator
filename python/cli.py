@@ -46,6 +46,21 @@ def train(
     grad_clip: float = typer.Option(
         1.0, help="Max grad norm for clipping (passed to clip_grad_norm_)"
     ),
+    train_workers: int = typer.Option(
+        4,
+        min=0,
+        help="Number of worker processes for the training dataloader",
+    ),
+    val_workers: int = typer.Option(
+        2,
+        min=0,
+        help="Number of worker processes for the validation dataloader",
+    ),
+    upload_checkpoints: bool = typer.Option(
+        True,
+        "--upload-checkpoints/--no-upload-checkpoints",
+        help="Upload checkpoints to Weights & Biases artifacts",
+    ),
     resume: bool = typer.Option(False, help="Resume from existing checkpoint"),
 ):
     """Train the model with explicit hyperparameters and WandB logging."""
@@ -81,6 +96,9 @@ def train(
         factor=factor,
         grad_clip=grad_clip,
         resume=resume,
+        train_workers=train_workers,
+        val_workers=val_workers,
+        upload_checkpoints=upload_checkpoints,
     )
 
 

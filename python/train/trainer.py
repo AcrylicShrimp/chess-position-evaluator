@@ -23,10 +23,12 @@ class Trainer:
         steps_per_epoch: int,
         batch_size: int,
         grad_clip: float,
+        upload_checkpoints: bool,
     ):
         self.model = model
         self.device = device
         self.experiment_name = experiment_name
+        self.upload_checkpoints = upload_checkpoints
         self.enable_autocast = device.type != "cpu"
         self.autocast_dtype = (
             torch.bfloat16
@@ -98,7 +100,9 @@ class Trainer:
 
         print(f"[✓] Loaded checkpoint from {checkpoint_path}")
 
-    def save_checkpoint(self, checkpoint_path: str, epoch: int):
+    def save_checkpoint(
+        self, checkpoint_path: str, epoch: int, aliases: list[str] | None = None
+    ):
         torch.save(
             {
                 "model": self.model.state_dict(),
@@ -110,6 +114,31 @@ class Trainer:
             },
             checkpoint_path,
         )
+        if aliases is None:
+            aliases = [
+                "latest",
+                f"epoch-{epoch + 1}",
+            ]
+        self._upload_checkpoint(
+            checkpoint_path,
+            aliases=aliases,
+        )
+
+    def _upload_checkpoint(self, checkpoint_path: str, aliases: list[str]):
+        if not self.upload_checkpoints:
+            return
+
+        if not os.path.exists(checkpoint_path):
+            return
+
+        artifact = wandb.Artifact(
+            name=f"{self.experiment_name}-checkpoint",
+            type="model",
+            description="Training checkpoint",
+        )
+        artifact.add_file(
+            checkpoint_path, name=os.path.basename(checkpoint_path))
+        wandb.log_artifact(artifact, aliases=aliases)
 
     def train(
         self,
@@ -224,7 +253,14 @@ class Trainer:
 
                 if avg_validation_loss < self.best_validation_loss:
                     self.best_validation_loss = avg_validation_loss
-                    self.save_checkpoint(best_checkpoint_path, epoch + 1)
+                    self.save_checkpoint(
+                        best_checkpoint_path,
+                        epoch + 1,
+                        aliases=[
+                            "best",
+                            f"epoch-{epoch + 1}",
+                        ],
+                    )
                     print(
                         f"[🎉] New best validation loss: {self.best_validation_loss:.4f} (saved to {best_checkpoint_path})"
                     )

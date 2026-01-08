@@ -21,6 +21,9 @@ def run_training(
     factor: float,
     grad_clip: float,
     resume: bool,
+    train_workers: int = 4,
+    val_workers: int = 2,
+    upload_checkpoints: bool = True,
 ):
     """Run training with the given hyperparameters."""
     print("=== Train Evaluation ===")
@@ -46,6 +49,9 @@ def run_training(
     print(f"[✓] Optimizer: lr={lr}, wd={wd}")
     print(f"[✓] Scheduler: patience={patience}, factor={factor}")
     print(f"[✓] Grad clip: {grad_clip}")
+    print(
+        f"[✓] DataLoader workers: train={train_workers}, val={val_workers} | Upload checkpoints: {upload_checkpoints}"
+    )
 
     model = EvalOnlyModel()
     trainer = Trainer(
@@ -60,6 +66,7 @@ def run_training(
         steps_per_epoch=steps_per_epoch,
         batch_size=batch_size,
         grad_clip=grad_clip,
+        upload_checkpoints=upload_checkpoints,
     )
 
     if resume:
@@ -70,10 +77,10 @@ def run_training(
         train_data,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=4,
+        num_workers=train_workers,
         pin_memory=True,
-        persistent_workers=True,
-        worker_init_fn=worker_init_fn,
+        persistent_workers=train_workers > 0,
+        worker_init_fn=worker_init_fn if train_workers > 0 else None,
     )
 
     validation_data = ChessEvaluationDataset(validation_data_path)
@@ -81,10 +88,10 @@ def run_training(
         validation_data,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=2,
+        num_workers=val_workers,
         pin_memory=True,
-        persistent_workers=True,
-        worker_init_fn=worker_init_fn,
+        persistent_workers=val_workers > 0,
+        worker_init_fn=worker_init_fn if val_workers > 0 else None,
     )
 
     print(f"[✓] Data loaded from {train_data_path} ({len(train_data)} rows)")
