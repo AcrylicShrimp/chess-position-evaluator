@@ -8,6 +8,7 @@ Usage:
     cpe export-onnx <model-name>
 """
 
+from dotenv import find_dotenv, load_dotenv
 import os
 import re
 import typer
@@ -17,6 +18,11 @@ app = typer.Typer(
     help="Chess Position Evaluator CLI",
     add_completion=False,
 )
+
+dotenv_path = find_dotenv(usecwd=True)
+
+if dotenv_path:
+    load_dotenv(dotenv_path=dotenv_path)
 
 EXPERIMENT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 

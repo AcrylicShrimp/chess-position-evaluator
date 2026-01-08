@@ -4,4 +4,5 @@ onnx
 onnxruntime
 tqdm
 typer
+python-dotenv
 wandb
