@@ -22,6 +22,7 @@ class Trainer:
         epochs: int,
         steps_per_epoch: int,
         batch_size: int,
+        grad_clip: float,
     ):
         self.model = model
         self.device = device
@@ -71,8 +72,10 @@ class Trainer:
                 "epochs": epochs,
                 "steps_per_epoch": steps_per_epoch,
                 "batch_size": batch_size,
+                "grad_clip": grad_clip,
             },
         )
+        self.grad_clip = grad_clip
 
     def signal_handler(self, signum, frame):
         self.should_stop = True
@@ -149,7 +152,8 @@ class Trainer:
                     self.grad_scaler.unscale_(self.optimizer)
 
                     grad_norm = torch.nn.utils.clip_grad_norm_(
-                        self.model.parameters(), max_norm=1.0)
+                        self.model.parameters(), max_norm=self.grad_clip
+                    )
 
                     self.grad_scaler.step(self.optimizer)
                     self.grad_scaler.update()

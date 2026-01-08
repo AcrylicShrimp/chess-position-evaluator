@@ -19,6 +19,7 @@ def run_training(
     wd: float,
     patience: int,
     factor: float,
+    grad_clip: float,
     resume: bool,
 ):
     """Run training with the given hyperparameters."""
@@ -44,6 +45,7 @@ def run_training(
     )
     print(f"[✓] Optimizer: lr={lr}, wd={wd}")
     print(f"[✓] Scheduler: patience={patience}, factor={factor}")
+    print(f"[✓] Grad clip: {grad_clip}")
 
     model = EvalOnlyModel()
     trainer = Trainer(
@@ -57,6 +59,7 @@ def run_training(
         epochs=epochs,
         steps_per_epoch=steps_per_epoch,
         batch_size=batch_size,
+        grad_clip=grad_clip,
     )
 
     if resume:

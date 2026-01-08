@@ -37,6 +37,9 @@ def train(
     factor: float = typer.Option(
         ..., help="Scheduler factor (LR multiplier on plateau)"
     ),
+    grad_clip: float = typer.Option(
+        1.0, help="Max grad norm for clipping (passed to clip_grad_norm_)"
+    ),
     resume: bool = typer.Option(False, help="Resume from existing checkpoint"),
 ):
     """Train the model with explicit hyperparameters and WandB logging."""
@@ -70,6 +73,7 @@ def train(
         wd=wd,
         patience=patience,
         factor=factor,
+        grad_clip=grad_clip,
         resume=resume,
     )
 
