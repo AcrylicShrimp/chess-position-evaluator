@@ -7,7 +7,7 @@ const DUCKDB_TEMP_PATH: &str = "lichess_db_eval.duckdb.tmp";
 const CHESS_EVALUATION_DB_PATH: &str = "lichess_db_eval.jsonl";
 const TRAIN_CHESSEVAL_PATH: &str = "train.chesseval";
 const VALIDATION_CHESSEVAL_PATH: &str = "validation.chesseval";
-const DATASET_RATIO: f64 = 0.4;
+const DATASET_RATIO: f64 = 1.0;
 const VALIDATION_SET_RATIO: f64 = 0.1;
 
 #[tokio::main]
@@ -89,7 +89,7 @@ async fn create_temp_table(
                     SELECT fen, unnest(evals) as eval
                     FROM read_json_auto(?1)
                 )
-                WHERE 10 <= eval.depth 
+                WHERE 24 <= eval.depth 
                   AND array_length(eval.pvs) != 0
             )
             WHERE (pvs.cp IS NOT NULL OR pvs.mate IS NOT NULL)

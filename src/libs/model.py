@@ -1,5 +1,7 @@
 import torch
 
+from libs.movement import TOTAL_MOVES
+
 
 class SqueezeExcitationBlock(torch.nn.Module):
     def __init__(self, channels: int, reduction_ratio: int = 8):
@@ -25,10 +27,12 @@ class ResidualBlock(torch.nn.Module):
     def __init__(self, channels: int):
         super().__init__()
         self.block = torch.nn.Sequential(
-            torch.nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False),
+            torch.nn.Conv2d(channels, channels, kernel_size=3,
+                            padding=1, bias=False),
             torch.nn.BatchNorm2d(channels),
             torch.nn.ReLU(inplace=True),
-            torch.nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False),
+            torch.nn.Conv2d(channels, channels, kernel_size=3,
+                            padding=1, bias=False),
             torch.nn.BatchNorm2d(channels),
         )
         self.se = SqueezeExcitationBlock(channels)
@@ -41,11 +45,60 @@ class ResidualBlock(torch.nn.Module):
         return self.relu(out)
 
 
-class Model(torch.nn.Module):
+class ModelFull(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.initial_block = torch.nn.Sequential(
-            torch.nn.Conv2d(20, 128, kernel_size=3, padding=1, bias=False),
+            torch.nn.Conv2d(18, 128, kernel_size=3, padding=1, bias=False),
+            torch.nn.BatchNorm2d(128),
+            torch.nn.ReLU(inplace=True),
+        )
+
+        self.residual_blocks = torch.nn.Sequential(
+            *[ResidualBlock(128) for _ in range(6)],
+        )
+
+        self.value_head = torch.nn.Sequential(
+            torch.nn.Conv2d(128, 32, kernel_size=1, bias=False),
+            torch.nn.BatchNorm2d(32),
+            torch.nn.ReLU(inplace=True),
+            torch.nn.Flatten(),
+            torch.nn.Linear(32 * 8 * 8, 256),
+            torch.nn.ReLU(inplace=True),
+            torch.nn.Linear(256, 1),
+        )
+        self.policy_head = torch.nn.Sequential(
+            torch.nn.Conv2d(128, 32, kernel_size=1, bias=False),
+            torch.nn.BatchNorm2d(32),
+            torch.nn.ReLU(inplace=True),
+            torch.nn.Flatten(),
+            torch.nn.Linear(32 * 8 * 8, TOTAL_MOVES),
+        )
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        out = self.initial_block(x)
+        out = self.residual_blocks(out)
+
+        return (self.value_head(out), self.policy_head(out))
+
+    def forward_eval(self, x: torch.Tensor) -> torch.Tensor:
+        out = self.initial_block(x)
+        out = self.residual_blocks(out)
+
+        return self.value_head(out)
+
+    def forward_policy(self, x: torch.Tensor) -> torch.Tensor:
+        out = self.initial_block(x)
+        out = self.residual_blocks(out)
+
+        return self.policy_head(out)
+
+
+class EvalOnlyModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.initial_block = torch.nn.Sequential(
+            torch.nn.Conv2d(18, 128, kernel_size=3, padding=1, bias=False),
             torch.nn.BatchNorm2d(128),
             torch.nn.ReLU(inplace=True),
         )

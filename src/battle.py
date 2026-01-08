@@ -2,13 +2,17 @@ import chess
 import os
 import random
 import torch
-from battle.board2score import board2score
+
+from libs.scoring import board2score
+from libs.model import EvalOnlyModel
+
 from battle.negamax import find_best_move
-from model import Model
 
 
-def make_ai_move(board: chess.Board, model: Model, device: torch.device) -> chess.Move:
-    return find_best_move(board, model, device, 6)
+def make_ai_move(
+    board: chess.Board, model: EvalOnlyModel, device: torch.device
+) -> chess.Move:
+    return find_best_move(board, model, device, 4)
 
 
 def make_player_move(board: chess.Board) -> chess.Move:
@@ -41,7 +45,7 @@ def main():
     print(f"[✓] Using device: {device}")
 
     best_checkpoint_path = "model-best.pth"
-    model = Model()
+    model = EvalOnlyModel()
     model.to(device)
 
     if os.path.exists("BEST_CHECKPOINT_PATH"):

@@ -1,0 +1,5 @@
+chess
+numpy
+standard-imghdr
+tensorboard
+tqdm

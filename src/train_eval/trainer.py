@@ -1,19 +1,17 @@
-import chess
 import itertools
 import os
 import signal
 import torch
-from chess_board import board2input
-from chess_movement import encode_moves, decode_moves
-from model import Model
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+
+from libs.model import EvalOnlyModel
 
 
 class Trainer:
     def __init__(
         self,
-        model: Model,
+        model: EvalOnlyModel,
         device: torch.device,
     ):
         self.model = model
@@ -21,17 +19,17 @@ class Trainer:
         self.enable_amp = device.type != "cpu"
 
         self.optimizer = torch.optim.AdamW(
-            model.parameters(), lr=1e-4, weight_decay=1e-4
+            model.parameters(), lr=1e-3, weight_decay=1e-4
         )
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer, T_max=10
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer, mode="min", factor=0.5, patience=10
         )
         self.grad_scaler = torch.amp.GradScaler()
 
         self.model.to(self.device)
 
         if self.device.type == "cuda":
-            self.model.compile()
+            self.model.compile(mode="reduce-overhead")
             print(f"[✓] Model compiled (cuda)")
         else:
             print("[!] Model will not be compiled; no cuda device found")
@@ -76,58 +74,6 @@ class Trainer:
             checkpoint_path,
         )
 
-    def generate_label(self, boards: list[chess.Board]) -> torch.Tensor:
-        def normalize_with_softmax(scores_to_normalize, moves_to_pair):
-            scores_tensor = torch.tensor(scores_to_normalize, dtype=torch.float32)
-
-            temperature = 1.0
-            probabilities = torch.nn.functional.softmax(
-                scores_tensor / temperature, dim=0
-            )
-
-            return [
-                (piece, move, prob.item())
-                for (piece, move), prob in zip(moves_to_pair, probabilities)
-            ]
-
-        labels = []
-        self.model.eval()
-
-        for board in boards:
-            moves_with_scores = []
-            raw_scores = []
-
-            for move in board.legal_moves:
-                piece = board.piece_at(move.from_square)
-
-                if piece is None:
-                    continue
-
-                next_board = board.copy()
-                next_board.push(move)
-
-                with torch.no_grad():
-                    output = self.model.forward_eval(
-                        board2input(next_board).to(self.device)
-                    )
-                    output = output.squeeze().item()
-                    output = max(min(output, 20), -20)
-
-                moves_with_scores.append((piece, move))
-                raw_scores.append(output)
-
-            if not raw_scores:
-                labels.append(torch.zeros(4672))
-                continue
-
-            final_moves = normalize_with_softmax(raw_scores, moves_with_scores)
-            labels.append(encode_moves(final_moves))
-
-        labels = torch.vstack(labels)
-        self.model.train()
-
-        return labels
-
     def train(
         self,
         checkpoint_path: str,
@@ -144,23 +90,25 @@ class Trainer:
             self.model.train()
 
             loss_acc = 0.0
-            pbar: tqdm[tuple[torch.Tensor, list[chess.Board]]] = tqdm(
+            pbar: tqdm[tuple[torch.Tensor, torch.Tensor]] = tqdm(
                 itertools.islice(train_data_loader, steps_per_epoch),
                 total=steps_per_epoch,
                 desc=f"Epoch {epoch + 1}/{epochs}",
                 unit="step",
             )
 
-            for step, (input, boards) in enumerate(pbar):
+            for step, (input, label) in enumerate(pbar):
                 input = input.to(self.device)
-                label = self.generate_label(boards).to(self.device)
+                label = label.to(self.device)
 
                 self.optimizer.zero_grad(set_to_none=True)
 
                 with torch.autocast(
-                    device_type=self.device.type, enabled=self.enable_amp
+                    device_type=self.device.type,
+                    enabled=self.enable_amp,
+                    dtype=torch.bfloat16 if self.device.type == "cuda" else None,
                 ):
-                    output = self.model.forward_policy(input)
+                    output = self.model(input)
                     loss = compute_loss(output, label)
 
                 if self.enable_amp:
@@ -184,8 +132,9 @@ class Trainer:
                     self.save_checkpoint(checkpoint_path, epoch)
                     del train_data_loader._iterator
                     del validation_data_loader._iterator
+                    writer.flush()
                     print("[!] Stopping training (Ctrl+C pressed)")
-                    exit(0)
+                    os._exit(0)
 
             self.save_checkpoint(
                 checkpoint_path,
@@ -193,20 +142,19 @@ class Trainer:
             )
             print(f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
 
-            self.scheduler.step()
             self.model.eval()
 
             validation_loss_acc = 0.0
             validation_steps = max(steps_per_epoch // 10, 1)
 
-            for step, (input, boards) in enumerate(
+            for step, (input, label) in enumerate(
                 itertools.islice(validation_data_loader, validation_steps)
             ):
                 with torch.no_grad():
                     input = input.to(self.device)
-                    label = self.generate_label(boards).to(self.device)
+                    label = label.to(self.device)
 
-                    output = self.model.forward_policy(input)
+                    output = self.model(input)
                     loss = compute_loss(output, label)
 
                     loss = loss.item()
@@ -218,6 +166,8 @@ class Trainer:
             avg_validation_loss = validation_loss_acc / validation_steps
 
             print(f"[✓] Validation Loss: {avg_validation_loss:.4f}")
+
+            self.scheduler.step(avg_validation_loss)
 
             if avg_validation_loss < self.best_validation_loss:
                 self.best_validation_loss = avg_validation_loss
@@ -236,4 +186,4 @@ class Trainer:
 
 
 def compute_loss(output: torch.Tensor, label: torch.Tensor) -> torch.Tensor:
-    return torch.nn.functional.cross_entropy()
+    return torch.nn.functional.binary_cross_entropy_with_logits(output, label)
