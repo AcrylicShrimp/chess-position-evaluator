@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 
 from libs.movement import TOTAL_MOVES
 
@@ -17,7 +18,15 @@ class AddCoords(torch.nn.Module):
                                                           width) / (width - 1.0)
             - 1.0
         )
-        coords = torch.stack((y_coords, x_coords), dim=0).unsqueeze(0)
+
+        d1_coords = x_coords + y_coords
+        d1_coords = d1_coords / d1_coords.abs().max()
+
+        d2_coords = x_coords - y_coords
+        d2_coords = d2_coords / d2_coords.abs().max()
+
+        coords = torch.stack(
+            (y_coords, x_coords, d1_coords, d2_coords), dim=0).unsqueeze(0)
 
         self.register_buffer("coords", coords)
 
@@ -53,18 +62,54 @@ class DepthwiseSeparableConv(torch.nn.Module):
         return out
 
 
+class CoordinateAttention(torch.nn.Module):
+    def __init__(self, channels: int, reduction: int = 32):
+        super().__init__()
+        reduced = max(8, channels // reduction)
+        self.reduce = torch.nn.Conv2d(
+            channels, reduced, kernel_size=1, bias=True)
+        self.bn = torch.nn.BatchNorm2d(reduced)
+        self.act = torch.nn.Hardswish(inplace=True)
+        self.attn_h = torch.nn.Conv2d(
+            reduced, channels, kernel_size=1, bias=True)
+        self.attn_w = torch.nn.Conv2d(
+            reduced, channels, kernel_size=1, bias=True)
+        self.sigmoid = torch.nn.Sigmoid()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        _b, _c, h, w = x.shape
+
+        x_h = F.adaptive_avg_pool2d(x, (h, 1))
+        x_w = F.adaptive_avg_pool2d(x, (1, w)).permute(0, 1, 3, 2)
+
+        y = torch.cat([x_h, x_w], dim=2)
+        y = self.reduce(y)
+        y = self.bn(y)
+        y = self.act(y)
+
+        y_h, y_w = torch.split(y, [h, w], dim=2)
+        y_w = y_w.permute(0, 1, 3, 2)
+
+        a_h = self.sigmoid(self.attn_h(y_h))
+        a_w = self.sigmoid(self.attn_w(y_w))
+
+        return x * a_h * a_w
+
+
 class ResidualBlock(torch.nn.Module):
     def __init__(self, channels: int):
         super().__init__()
         self.dsc1 = DepthwiseSeparableConv(channels, channels)
-        self.relu1 = torch.nn.ReLU(inplace=True)
+        self.relu1 = torch.nn.Hardswish(inplace=True)
         self.dsc2 = DepthwiseSeparableConv(channels, channels)
-        self.relu2 = torch.nn.ReLU(inplace=True)
+        self.ca = CoordinateAttention(channels)
+        self.relu2 = torch.nn.Hardswish(inplace=True)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = self.dsc1(x)
         out = self.relu1(out)
         out = self.dsc2(out)
+        out = self.ca(out)
         out += x
         out = self.relu2(out)
 
@@ -76,9 +121,9 @@ class ModelFull(torch.nn.Module):
         super().__init__()
         self.add_coords = AddCoords(8, 8)
         self.initial_block = torch.nn.Sequential(
-            torch.nn.Conv2d(20, 64, kernel_size=3, padding=1, bias=False),
+            torch.nn.Conv2d(22, 64, kernel_size=3, padding=1, bias=False),
             torch.nn.BatchNorm2d(64),
-            torch.nn.ReLU(inplace=True),
+            torch.nn.Hardswish(inplace=True),
         )
 
         self.residual_blocks = torch.nn.Sequential(
@@ -88,16 +133,16 @@ class ModelFull(torch.nn.Module):
         self.value_head = torch.nn.Sequential(
             torch.nn.Conv2d(64, 2, kernel_size=1, bias=False),
             torch.nn.BatchNorm2d(2),
-            torch.nn.ReLU(inplace=True),
+            torch.nn.Hardswish(inplace=True),
             torch.nn.Flatten(),
             torch.nn.Linear(2 * 8 * 8, 64),
-            torch.nn.ReLU(inplace=True),
+            torch.nn.Hardswish(inplace=True),
             torch.nn.Linear(64, 1),
         )
         self.policy_head = torch.nn.Sequential(
             torch.nn.Conv2d(64, 16, kernel_size=1, bias=False),
             torch.nn.BatchNorm2d(16),
-            torch.nn.ReLU(inplace=True),
+            torch.nn.Hardswish(inplace=True),
             torch.nn.Flatten(),
             torch.nn.Linear(16 * 8 * 8, TOTAL_MOVES),
         )
@@ -129,9 +174,9 @@ class EvalOnlyModel(torch.nn.Module):
         super().__init__()
         self.add_coords = AddCoords(8, 8)
         self.initial_block = torch.nn.Sequential(
-            torch.nn.Conv2d(20, 64, kernel_size=3, padding=1, bias=False),
+            torch.nn.Conv2d(22, 64, kernel_size=3, padding=1, bias=False),
             torch.nn.BatchNorm2d(64),
-            torch.nn.ReLU(inplace=True),
+            torch.nn.Hardswish(inplace=True),
         )
 
         self.residual_blocks = torch.nn.Sequential(
@@ -141,10 +186,10 @@ class EvalOnlyModel(torch.nn.Module):
         self.value_head = torch.nn.Sequential(
             torch.nn.Conv2d(64, 2, kernel_size=1, bias=False),
             torch.nn.BatchNorm2d(2),
-            torch.nn.ReLU(inplace=True),
+            torch.nn.Hardswish(inplace=True),
             torch.nn.Flatten(),
             torch.nn.Linear(2 * 8 * 8, 64),
-            torch.nn.ReLU(inplace=True),
+            torch.nn.Hardswish(inplace=True),
             torch.nn.Linear(64, 1),
         )
 
