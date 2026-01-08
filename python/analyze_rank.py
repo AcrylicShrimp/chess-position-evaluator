@@ -2,11 +2,7 @@
 Analyze activation rank to determine if model channel capacity is appropriate.
 
 Usage:
-    uv run python python/analyze_rank.py <model-name>
-
-Example:
-    uv run python python/analyze_rank.py small-0.6337-model-best
-        models/checkpoints/small-0.6337-model-best.pth
+    cpe analyze-rank <model-name>
 
 Interpretation:
     - Rapid decay to ~0 (eff_rank << channels): Over-parameterized
@@ -31,13 +27,8 @@ BATCH_SIZE = 256
 RANK_THRESHOLD = 0.01  # 1% of max singular value
 
 
-def main():
-    if len(sys.argv) != 2:
-        print("Usage: python analyze_rank.py <model-name>")
-        print("Example: python analyze_rank.py small-0.6337-model-best")
-        sys.exit(1)
-
-    model_name = sys.argv[1]
+def run_analyze_rank(model_name: str):
+    """Analyze activation rank for the given model."""
     model_path = os.path.join(CHECKPOINTS_DIR, f"{model_name}.pth")
 
     if not os.path.exists(model_path):
@@ -199,5 +190,3 @@ def print_ascii_plot(name: str, singular_values: torch.Tensor, eff_rank: int):
         prev_idx = idx
 
 
-if __name__ == "__main__":
-    main()

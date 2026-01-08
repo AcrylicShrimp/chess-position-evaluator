@@ -2,10 +2,10 @@
 Export EvalOnlyModel to ONNX format.
 
 Usage:
-    uv run python python/export_onnx.py <model-name>
+    cpe export-onnx <model-name>
 
-Examples:
-    uv run python python/export_onnx.py model-best
+Example:
+    cpe export-onnx model-best
         models/checkpoints/model-best.pth -> models/onnx/model-best.onnx
 """
 
@@ -27,13 +27,8 @@ OPSET_VERSION = 21
 EXAMPLE_BATCH_SIZE = 2 * 1024
 
 
-def main():
-    if len(sys.argv) != 2:
-        print("Usage: python export_onnx.py <model-name>")
-        print("Example: python export_onnx.py model-best")
-        sys.exit(1)
-
-    model_name = sys.argv[1]
+def run_export_onnx(model_name: str):
+    """Export the given model to ONNX format."""
     input_path = os.path.join(CHECKPOINTS_DIR, f"{model_name}.pth")
     output_path = os.path.join(ONNX_DIR, f"{model_name}.onnx")
 
@@ -106,5 +101,3 @@ def main():
     print(f"Output:   value [batch, 1]")
 
 
-if __name__ == "__main__":
-    main()

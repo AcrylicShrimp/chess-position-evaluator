@@ -1,11 +1,16 @@
 import os
+
 import torch
 
 from libs.encoding import fen2tensor
 from libs.model import EvalOnlyModel
 
 
-def main():
+CHECKPOINTS_DIR = "models/checkpoints"
+
+
+def run_eval(model_name: str):
+    """Run interactive FEN evaluation with the given model."""
     print(f"[✓] Using torch version: {torch.__version__}")
 
     if torch.cuda.is_available():
@@ -17,23 +22,34 @@ def main():
 
     print(f"[✓] Using device: {device}")
 
-    best_checkpoint_path = "model-best.pth"
+    checkpoint_path = os.path.join(CHECKPOINTS_DIR, f"{model_name}.pth")
+
+    if not os.path.exists(checkpoint_path):
+        print(f"Error: {checkpoint_path} not found")
+        return
+
     model = EvalOnlyModel()
     model.to(device)
 
-    if os.path.exists("BEST_CHECKPOINT_PATH"):
-        best_checkpoint_path = os.environ.get("BEST_CHECKPOINT_PATH")
-
-    checkpoint = torch.load(best_checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint["model"])
     model.eval()
-    print(f"[✓] Model loaded from {best_checkpoint_path}")
+    print(f"[✓] Model loaded from {checkpoint_path}")
 
-    best_validation_loss = checkpoint["best_validation_loss"]
-    print(f"[✓] Best validation loss: {best_validation_loss:.4f}")
+    if "best_validation_loss" in checkpoint:
+        best_validation_loss = checkpoint["best_validation_loss"]
+        print(f"[✓] Best validation loss: {best_validation_loss:.4f}")
+
+    print()
+    print("Enter FEN strings to evaluate. Press Enter with empty input to exit.")
+    print()
 
     while True:
-        fen = input("Enter FEN: ")
+        try:
+            fen = input("FEN: ")
+        except EOFError:
+            break
+
         fen = fen.strip()
 
         if fen == "":
@@ -63,10 +79,10 @@ def main():
         except Exception as e:
             print(f"Error evaluating position: {e}")
 
+        print()
+
 
 def centipawn_to_win_prob(cp: int) -> float:
     return 1.0 / (1.0 + 10.0 ** (float(-cp) / 400.0))
 
 
-if __name__ == "__main__":
-    main()
