@@ -18,7 +18,7 @@ class Trainer:
         lr: float,
         wd: float,
         t0: int,
-        t_mult: float,
+        t_mult: int,
         eta_min: float,
         epochs: int,
         steps_per_epoch: int,

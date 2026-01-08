@@ -42,9 +42,9 @@ def train(
         min=1,
         help="Scheduler T_0 (epochs before first restart) for CosineAnnealingWarmRestarts",
     ),
-    t_mult: float = typer.Option(
-        2.0,
-        min=1.0,
+    t_mult: int = typer.Option(
+        2,
+        min=1,
         help="Scheduler T_mult (restart period multiplier) for CosineAnnealingWarmRestarts",
     ),
     eta_min: float = typer.Option(

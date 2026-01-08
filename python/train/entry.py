@@ -18,7 +18,7 @@ def run_training(
     lr: float,
     wd: float,
     t0: int,
-    t_mult: float,
+    t_mult: int,
     eta_min: float,
     grad_clip: float,
     resume: bool,
