@@ -4,8 +4,7 @@ import torch.nn.functional as F
 from libs.movement import TOTAL_MOVES
 
 # Order matches chess.PIECE_TYPES (pawn, knight, bishop, rook, queen, king)
-_MATERIAL_VALUES = torch.tensor(
-    [1.0, 3.0, 3.0, 5.0, 9.0, 0.0], dtype=torch.float32)
+_MATERIAL_VALUES = torch.tensor([1.0, 3.0, 3.0, 5.0, 9.0, 0.0], dtype=torch.float32)
 _MATERIAL_ALPHA = 5.0
 
 
@@ -36,8 +35,7 @@ def _material_feature(
         # Channels: 0-4 meta, 5 en-passant, 6-11 ours, 12-17 theirs.
         our_pieces = x[:, 6:12]
         enemy_pieces = x[:, 12:18]
-        weights = material_weights.to(
-            dtype=x.dtype, device=x.device).view(1, 6, 1, 1)
+        weights = material_weights.to(dtype=x.dtype, device=x.device).view(1, 6, 1, 1)
         our_score = (our_pieces * weights).sum(dim=(1, 2, 3))
         enemy_score = (enemy_pieces * weights).sum(dim=(1, 2, 3))
         diff = our_score - enemy_score
@@ -59,8 +57,7 @@ class AddCoords(torch.nn.Module):
             - 1.0
         )
         x_coords = (
-            2.0 * torch.arange(width).unsqueeze(0).expand(height,
-                                                          width) / (width - 1.0)
+            2.0 * torch.arange(width).unsqueeze(0).expand(height, width) / (width - 1.0)
             - 1.0
         )
 
@@ -112,14 +109,11 @@ class CoordinateAttention(torch.nn.Module):
     def __init__(self, channels: int, reduction: int = 32):
         super().__init__()
         reduced = max(8, channels // reduction)
-        self.reduce = torch.nn.Conv2d(
-            channels, reduced, kernel_size=1, bias=True)
+        self.reduce = torch.nn.Conv2d(channels, reduced, kernel_size=1, bias=True)
         self.bn = torch.nn.BatchNorm2d(reduced)
         self.act = torch.nn.Hardswish(inplace=True)
-        self.attn_h = torch.nn.Conv2d(
-            reduced, channels, kernel_size=1, bias=True)
-        self.attn_w = torch.nn.Conv2d(
-            reduced, channels, kernel_size=1, bias=True)
+        self.attn_h = torch.nn.Conv2d(reduced, channels, kernel_size=1, bias=True)
+        self.attn_w = torch.nn.Conv2d(reduced, channels, kernel_size=1, bias=True)
         self.sigmoid = torch.nn.Sigmoid()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -140,6 +134,71 @@ class CoordinateAttention(torch.nn.Module):
         a_w = self.sigmoid(self.attn_w(y_w))
 
         return x * a_h * a_w
+
+
+class ChannelShuffle(torch.nn.Module):
+    def __init__(self, groups: int = 2):
+        super().__init__()
+        self.groups = groups
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        batch, channels, height, width = x.shape
+        if channels % self.groups != 0:
+            # ShuffleNetV2 requires channel count divisible by groups.
+            raise ValueError(
+                f"Channels {channels} must be divisible by groups {self.groups} for shuffle."
+            )
+
+        x = x.reshape(batch, self.groups, channels // self.groups, height, width)
+        x = x.transpose(1, 2).contiguous()
+        return x.reshape(batch, channels, height, width)
+
+
+class ShuffleUnit(torch.nn.Module):
+    """
+    Standard ShuffleNet V2 unit (channel split -> branch compute -> concat -> shuffle).
+    Keeps spatial size and channel count; uses group=2 shuffle for mixing.
+    """
+
+    def __init__(self, channels: int):
+        super().__init__()
+        if channels % 2 != 0:
+            raise ValueError(
+                "ShuffleUnit requires even channel count for split/concat."
+            )
+
+        branch_channels = channels // 2
+
+        self.branch2 = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                branch_channels, branch_channels, kernel_size=1, bias=False
+            ),
+            torch.nn.BatchNorm2d(branch_channels),
+            torch.nn.Hardswish(inplace=True),
+            torch.nn.Conv2d(
+                branch_channels,
+                branch_channels,
+                kernel_size=3,
+                padding=1,
+                groups=branch_channels,
+                bias=False,
+            ),
+            torch.nn.BatchNorm2d(branch_channels),
+            torch.nn.Conv2d(
+                branch_channels, branch_channels, kernel_size=1, bias=False
+            ),
+            torch.nn.BatchNorm2d(branch_channels),
+            torch.nn.Hardswish(inplace=True),
+        )
+        self.ca = CoordinateAttention(branch_channels)
+        self.shuffle = ChannelShuffle(groups=2)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x1, x2 = torch.chunk(x, 2, dim=1)
+        y2 = self.branch2(x2)
+        y2 = self.ca(y2)
+        out = torch.cat([x1, y2], dim=1)
+        return self.shuffle(out)
 
 
 class ResidualBlock(torch.nn.Module):
@@ -165,21 +224,23 @@ class ResidualBlock(torch.nn.Module):
 class ModelFull(torch.nn.Module):
     def __init__(self):
         super().__init__()
+        base_channels = 96  # keep backbone wide and even for ShuffleUnit splits
+
         self.add_coords = AddCoords(8, 8)
         self.initial_block = torch.nn.Sequential(
-            torch.nn.Conv2d(22, 48, kernel_size=3, padding=1, bias=False),
-            torch.nn.BatchNorm2d(48),
+            torch.nn.Conv2d(22, base_channels, kernel_size=3, padding=1, bias=False),
+            torch.nn.BatchNorm2d(base_channels),
             torch.nn.Hardswish(inplace=True),
         )
 
         self.residual_blocks = torch.nn.Sequential(
-            *[ResidualBlock(48) for _ in range(8)],
+            *[ShuffleUnit(base_channels) for _ in range(8)],
         )
 
         self.register_buffer("material_weights", _MATERIAL_VALUES)
 
         self.value_conv = torch.nn.Sequential(
-            torch.nn.Conv2d(48, 2, kernel_size=1, bias=False),
+            torch.nn.Conv2d(base_channels, 2, kernel_size=1, bias=False),
             torch.nn.BatchNorm2d(2),
             torch.nn.Hardswish(inplace=True),
             torch.nn.Flatten(),
@@ -190,7 +251,7 @@ class ModelFull(torch.nn.Module):
             torch.nn.Linear(64, 1),
         )
         self.policy_head = torch.nn.Sequential(
-            torch.nn.Conv2d(48, 16, kernel_size=1, bias=False),
+            torch.nn.Conv2d(base_channels, 16, kernel_size=1, bias=False),
             torch.nn.BatchNorm2d(16),
             torch.nn.Hardswish(inplace=True),
             torch.nn.Flatten(),
@@ -212,8 +273,7 @@ class ModelFull(torch.nn.Module):
         out = self.residual_blocks(out)
 
         value_flat = self.value_conv(out)
-        value = self.value_mlp(
-            torch.cat([value_flat, material_feature], dim=1))
+        value = self.value_mlp(torch.cat([value_flat, material_feature], dim=1))
 
         return value, self.policy_head(out)
 
@@ -245,21 +305,23 @@ class ModelFull(torch.nn.Module):
 class EvalOnlyModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
+        base_channels = 96
+
         self.add_coords = AddCoords(8, 8)
         self.initial_block = torch.nn.Sequential(
-            torch.nn.Conv2d(22, 48, kernel_size=3, padding=1, bias=False),
-            torch.nn.BatchNorm2d(48),
+            torch.nn.Conv2d(22, base_channels, kernel_size=3, padding=1, bias=False),
+            torch.nn.BatchNorm2d(base_channels),
             torch.nn.Hardswish(inplace=True),
         )
 
         self.residual_blocks = torch.nn.Sequential(
-            *[ResidualBlock(48) for _ in range(8)],
+            *[ShuffleUnit(base_channels) for _ in range(8)],
         )
 
         self.register_buffer("material_weights", _MATERIAL_VALUES)
 
         self.value_conv = torch.nn.Sequential(
-            torch.nn.Conv2d(48, 2, kernel_size=1, bias=False),
+            torch.nn.Conv2d(base_channels, 2, kernel_size=1, bias=False),
             torch.nn.BatchNorm2d(2),
             torch.nn.Hardswish(inplace=True),
             torch.nn.Flatten(),
