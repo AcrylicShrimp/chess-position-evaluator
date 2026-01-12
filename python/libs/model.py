@@ -4,7 +4,8 @@ import torch.nn.functional as F
 from libs.movement import TOTAL_MOVES
 
 # Order matches chess.PIECE_TYPES (pawn, knight, bishop, rook, queen, king)
-_MATERIAL_VALUES = torch.tensor([1.0, 3.0, 3.0, 5.0, 9.0, 0.0], dtype=torch.float32)
+_MATERIAL_VALUES = torch.tensor(
+    [1.0, 3.0, 3.0, 5.0, 9.0, 0.0], dtype=torch.float32)
 _MATERIAL_ALPHA = 5.0
 
 
@@ -35,7 +36,8 @@ def _material_feature(
         # Channels: 0-4 meta, 5 en-passant, 6-11 ours, 12-17 theirs.
         our_pieces = x[:, 6:12]
         enemy_pieces = x[:, 12:18]
-        weights = material_weights.to(dtype=x.dtype, device=x.device).view(1, 6, 1, 1)
+        weights = material_weights.to(
+            dtype=x.dtype, device=x.device).view(1, 6, 1, 1)
         our_score = (our_pieces * weights).sum(dim=(1, 2, 3))
         enemy_score = (enemy_pieces * weights).sum(dim=(1, 2, 3))
         diff = our_score - enemy_score
@@ -57,7 +59,8 @@ class AddCoords(torch.nn.Module):
             - 1.0
         )
         x_coords = (
-            2.0 * torch.arange(width).unsqueeze(0).expand(height, width) / (width - 1.0)
+            2.0 * torch.arange(width).unsqueeze(0).expand(height,
+                                                          width) / (width - 1.0)
             - 1.0
         )
 
@@ -109,11 +112,14 @@ class CoordinateAttention(torch.nn.Module):
     def __init__(self, channels: int, reduction: int = 32):
         super().__init__()
         reduced = max(8, channels // reduction)
-        self.reduce = torch.nn.Conv2d(channels, reduced, kernel_size=1, bias=True)
+        self.reduce = torch.nn.Conv2d(
+            channels, reduced, kernel_size=1, bias=True)
         self.bn = torch.nn.BatchNorm2d(reduced)
         self.act = torch.nn.Hardswish(inplace=True)
-        self.attn_h = torch.nn.Conv2d(reduced, channels, kernel_size=1, bias=True)
-        self.attn_w = torch.nn.Conv2d(reduced, channels, kernel_size=1, bias=True)
+        self.attn_h = torch.nn.Conv2d(
+            reduced, channels, kernel_size=1, bias=True)
+        self.attn_w = torch.nn.Conv2d(
+            reduced, channels, kernel_size=1, bias=True)
         self.sigmoid = torch.nn.Sigmoid()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -208,7 +214,8 @@ class ModelFull(torch.nn.Module):
         out = self.residual_blocks(out)
 
         value_flat = self.value_conv(out)
-        value = self.value_mlp(torch.cat([value_flat, material_feature], dim=1))
+        value = self.value_mlp(
+            torch.cat([value_flat, material_feature], dim=1))
 
         return value, self.policy_head(out)
 
