@@ -99,5 +99,3 @@ def run_export_onnx(model_name: str):
     print(f"Exported: {output_path}")
     print(f"Input:    board [batch, 18, 8, 8]")
     print(f"Output:   value [batch, 1]")
-
-
