@@ -8,8 +8,8 @@ _MATERIAL_VALUES = torch.tensor([1.0, 3.0, 3.0, 5.0, 9.0, 0.0], dtype=torch.floa
 _MATERIAL_ALPHA = 5.0
 
 
-CHANNELS = 96
-BLOCKS = 8
+CHANNELS = 128
+BLOCKS = 6
 
 
 def _material_feature(
