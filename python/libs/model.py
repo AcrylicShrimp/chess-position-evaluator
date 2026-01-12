@@ -110,7 +110,7 @@ class DepthwiseSeparableConv(torch.nn.Module):
 
 
 class CoordinateAttention(torch.nn.Module):
-    def __init__(self, channels: int, reduction: int = 32):
+    def __init__(self, channels: int, reduction: int):
         super().__init__()
         reduced = max(8, channels // reduction)
         self.reduce = torch.nn.Conv2d(channels, reduced, kernel_size=1, bias=True)
@@ -194,7 +194,7 @@ class ShuffleUnit(torch.nn.Module):
             torch.nn.BatchNorm2d(branch_channels),
             torch.nn.Hardswish(inplace=True),
         )
-        self.ca = CoordinateAttention(branch_channels)
+        self.ca = CoordinateAttention(branch_channels, reduction=8)
         self.shuffle = ChannelShuffle(groups=2)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -211,7 +211,7 @@ class ResidualBlock(torch.nn.Module):
         self.dsc1 = DepthwiseSeparableConv(channels, channels)
         self.relu1 = torch.nn.Hardswish(inplace=True)
         self.dsc2 = DepthwiseSeparableConv(channels, channels)
-        self.ca = CoordinateAttention(channels)
+        self.ca = CoordinateAttention(channels, reduction=8)
         self.relu2 = torch.nn.Hardswish(inplace=True)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
