@@ -9,7 +9,7 @@ _MATERIAL_ALPHA = 5.0
 
 
 CHANNELS = 160
-BLOCKS = 6
+BLOCKS = 4
 
 
 def _material_feature(
