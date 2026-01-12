@@ -12,7 +12,7 @@ _MATERIAL_ALPHA = 5.0
 def _material_feature(
     x: torch.Tensor,
     material_weights: torch.Tensor,
-    material_scale: torch.nn.Parameter,
+    material_scale: float,
     material_diff: torch.Tensor | None = None,
     alpha: float = _MATERIAL_ALPHA,
 ) -> torch.Tensor:
@@ -167,21 +167,19 @@ class ModelFull(torch.nn.Module):
         super().__init__()
         self.add_coords = AddCoords(8, 8)
         self.initial_block = torch.nn.Sequential(
-            torch.nn.Conv2d(22, 64, kernel_size=3, padding=1, bias=False),
-            torch.nn.BatchNorm2d(64),
+            torch.nn.Conv2d(22, 48, kernel_size=3, padding=1, bias=False),
+            torch.nn.BatchNorm2d(48),
             torch.nn.Hardswish(inplace=True),
         )
 
         self.residual_blocks = torch.nn.Sequential(
-            *[ResidualBlock(64) for _ in range(4)],
+            *[ResidualBlock(48) for _ in range(8)],
         )
 
-        # Global material skip: learnable scale on normalized material diff.
         self.register_buffer("material_weights", _MATERIAL_VALUES)
-        self.material_scale = torch.nn.Parameter(torch.tensor(1.0))
 
         self.value_conv = torch.nn.Sequential(
-            torch.nn.Conv2d(64, 2, kernel_size=1, bias=False),
+            torch.nn.Conv2d(48, 2, kernel_size=1, bias=False),
             torch.nn.BatchNorm2d(2),
             torch.nn.Hardswish(inplace=True),
             torch.nn.Flatten(),
@@ -192,7 +190,7 @@ class ModelFull(torch.nn.Module):
             torch.nn.Linear(64, 1),
         )
         self.policy_head = torch.nn.Sequential(
-            torch.nn.Conv2d(64, 16, kernel_size=1, bias=False),
+            torch.nn.Conv2d(48, 16, kernel_size=1, bias=False),
             torch.nn.BatchNorm2d(16),
             torch.nn.Hardswish(inplace=True),
             torch.nn.Flatten(),
@@ -205,7 +203,7 @@ class ModelFull(torch.nn.Module):
         material_feature = _material_feature(
             x=x,
             material_weights=self.material_weights,
-            material_scale=self.material_scale,
+            material_scale=1.0,
             material_diff=material_diff,
         )
 
@@ -225,7 +223,7 @@ class ModelFull(torch.nn.Module):
         material_feature = _material_feature(
             x=x,
             material_weights=self.material_weights,
-            material_scale=self.material_scale,
+            material_scale=1.0,
             material_diff=material_diff,
         )
 
@@ -249,20 +247,19 @@ class EvalOnlyModel(torch.nn.Module):
         super().__init__()
         self.add_coords = AddCoords(8, 8)
         self.initial_block = torch.nn.Sequential(
-            torch.nn.Conv2d(22, 64, kernel_size=3, padding=1, bias=False),
-            torch.nn.BatchNorm2d(64),
+            torch.nn.Conv2d(22, 48, kernel_size=3, padding=1, bias=False),
+            torch.nn.BatchNorm2d(48),
             torch.nn.Hardswish(inplace=True),
         )
 
         self.residual_blocks = torch.nn.Sequential(
-            *[ResidualBlock(64) for _ in range(4)],
+            *[ResidualBlock(48) for _ in range(8)],
         )
 
         self.register_buffer("material_weights", _MATERIAL_VALUES)
-        self.material_scale = torch.nn.Parameter(torch.tensor(1.0))
 
         self.value_conv = torch.nn.Sequential(
-            torch.nn.Conv2d(64, 2, kernel_size=1, bias=False),
+            torch.nn.Conv2d(48, 2, kernel_size=1, bias=False),
             torch.nn.BatchNorm2d(2),
             torch.nn.Hardswish(inplace=True),
             torch.nn.Flatten(),
@@ -279,7 +276,7 @@ class EvalOnlyModel(torch.nn.Module):
         material_feature = _material_feature(
             x=x,
             material_weights=self.material_weights,
-            material_scale=self.material_scale,
+            material_scale=1.0,
             material_diff=material_diff,
         )
 
