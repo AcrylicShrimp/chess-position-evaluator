@@ -8,6 +8,10 @@ _MATERIAL_VALUES = torch.tensor([1.0, 3.0, 3.0, 5.0, 9.0, 0.0], dtype=torch.floa
 _MATERIAL_ALPHA = 5.0
 
 
+CHANNELS = 96
+BLOCKS = 8
+
+
 def _material_feature(
     x: torch.Tensor,
     material_weights: torch.Tensor,
@@ -224,23 +228,21 @@ class ResidualBlock(torch.nn.Module):
 class ModelFull(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        base_channels = 96  # keep backbone wide and even for ShuffleUnit splits
-
         self.add_coords = AddCoords(8, 8)
         self.initial_block = torch.nn.Sequential(
-            torch.nn.Conv2d(22, base_channels, kernel_size=3, padding=1, bias=False),
-            torch.nn.BatchNorm2d(base_channels),
+            torch.nn.Conv2d(22, CHANNELS, kernel_size=3, padding=1, bias=False),
+            torch.nn.BatchNorm2d(CHANNELS),
             torch.nn.Hardswish(inplace=True),
         )
 
         self.residual_blocks = torch.nn.Sequential(
-            *[ShuffleUnit(base_channels) for _ in range(8)],
+            *[ShuffleUnit(CHANNELS) for _ in range(BLOCKS)],
         )
 
         self.register_buffer("material_weights", _MATERIAL_VALUES)
 
         self.value_conv = torch.nn.Sequential(
-            torch.nn.Conv2d(base_channels, 2, kernel_size=1, bias=False),
+            torch.nn.Conv2d(CHANNELS, 2, kernel_size=1, bias=False),
             torch.nn.BatchNorm2d(2),
             torch.nn.Hardswish(inplace=True),
             torch.nn.Flatten(),
@@ -251,7 +253,7 @@ class ModelFull(torch.nn.Module):
             torch.nn.Linear(64, 1),
         )
         self.policy_head = torch.nn.Sequential(
-            torch.nn.Conv2d(base_channels, 16, kernel_size=1, bias=False),
+            torch.nn.Conv2d(CHANNELS, 16, kernel_size=1, bias=False),
             torch.nn.BatchNorm2d(16),
             torch.nn.Hardswish(inplace=True),
             torch.nn.Flatten(),
@@ -305,23 +307,22 @@ class ModelFull(torch.nn.Module):
 class EvalOnlyModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        base_channels = 96
 
         self.add_coords = AddCoords(8, 8)
         self.initial_block = torch.nn.Sequential(
-            torch.nn.Conv2d(22, base_channels, kernel_size=3, padding=1, bias=False),
-            torch.nn.BatchNorm2d(base_channels),
+            torch.nn.Conv2d(22, CHANNELS, kernel_size=3, padding=1, bias=False),
+            torch.nn.BatchNorm2d(CHANNELS),
             torch.nn.Hardswish(inplace=True),
         )
 
         self.residual_blocks = torch.nn.Sequential(
-            *[ShuffleUnit(base_channels) for _ in range(8)],
+            *[ShuffleUnit(CHANNELS) for _ in range(BLOCKS)],
         )
 
         self.register_buffer("material_weights", _MATERIAL_VALUES)
 
         self.value_conv = torch.nn.Sequential(
-            torch.nn.Conv2d(base_channels, 2, kernel_size=1, bias=False),
+            torch.nn.Conv2d(CHANNELS, 2, kernel_size=1, bias=False),
             torch.nn.BatchNorm2d(2),
             torch.nn.Hardswish(inplace=True),
             torch.nn.Flatten(),
