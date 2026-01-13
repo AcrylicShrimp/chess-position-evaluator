@@ -33,9 +33,12 @@ def read_chess_evaluation_length(file: BinaryIO) -> int:
 def read_chess_evaluation(
     row: bytes,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    (bitflags, player_en_passant, *pieces, *heatmap, win_prob) = struct.unpack(
-        "<BQ12Q64Bf", row
-    )
+    unpacked = struct.unpack("<BQ12Q64Bf", row)
+    bitflags = unpacked[0]
+    player_en_passant = unpacked[1]
+    pieces = unpacked[2:14]  # 12 Q-words
+    heatmap = unpacked[14:78]  # 64 bytes
+    win_prob = unpacked[78]
 
     am_i_black_color = boolean2tensor(bitflags & 1 == 1)
     our_kingside_castling_rights = boolean2tensor(bitflags & 2 == 2)
