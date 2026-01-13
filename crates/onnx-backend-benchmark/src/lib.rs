@@ -1,7 +1,7 @@
 use anyhow::Result;
 use ndarray::{Array, Array4};
 use ort::{
-    session::{builder::GraphOptimizationLevel, Session},
+    session::{Session, builder::GraphOptimizationLevel},
     value::TensorRef,
 };
 use std::path::Path;

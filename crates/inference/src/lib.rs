@@ -22,7 +22,7 @@ impl Evaluator {
 
     /// Run inference on a batch of encoded boards.
     ///
-    /// Input shape: [batch, 18, 8, 8]
+    /// Input shape: [batch, 20, 8, 8]
     /// Output: Vec of win probabilities (sigmoid applied)
     pub fn evaluate_batch(&mut self, boards: Array4<f32>) -> Result<Vec<f32>> {
         let input = TensorRef::from_array_view(&boards)?;
@@ -36,7 +36,7 @@ impl Evaluator {
 
     /// Run inference on a single encoded board.
     ///
-    /// Input shape: [18, 8, 8]
+    /// Input shape: [20, 8, 8]
     /// Output: win probability (0.0 to 1.0)
     pub fn evaluate_single(&mut self, board: &Array<f32, ndarray::Ix3>) -> Result<f32> {
         let batch = board.clone().insert_axis(ndarray::Axis(0));
@@ -48,7 +48,7 @@ impl Evaluator {
     pub fn evaluate_random(&mut self, batch_size: usize) -> Result<Vec<f32>> {
         use ndarray::Array;
         let random_input: Array4<f32> =
-            Array::from_shape_fn((batch_size, 18, 8, 8), |_| rand_f32());
+            Array::from_shape_fn((batch_size, 20, 8, 8), |_| rand_f32());
         self.evaluate_batch(random_input)
     }
 }

@@ -1,9 +1,10 @@
-lichess_db_eval*.jsonl
-lichess_db_eval*.parquet
-lichess_db_eval*.duckdb
+*.jsonl
+*.chesseval
+*.duckdb
+*.duckdb.tmp
+
 tensorboard/
 wandb/
-*.chesseval
 *.pth
 log*.txt
 

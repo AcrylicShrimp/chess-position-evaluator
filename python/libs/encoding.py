@@ -14,6 +14,14 @@ def bitboards2tensors(bitboards: list[int]) -> torch.Tensor:
     return torch.from_numpy(unpacked).view(len(bitboards), 8, 8).float()
 
 
+def _attack_counts(board: chess.Board, color: chess.Color) -> np.ndarray:
+    counts = np.zeros(64, dtype=np.uint8)
+    for square in chess.SQUARES:
+        attackers = board.attackers(color, square)
+        counts[square] = min(len(attackers), 15)
+    return counts.reshape(8, 8)
+
+
 def board2tensor(board: chess.Board) -> torch.Tensor:
     us = board.turn
     them = not us
@@ -51,6 +59,23 @@ def board2tensor(board: chess.Board) -> torch.Tensor:
 
     bitboard_tensors = bitboards2tensors(all_bitboards)
 
+    our_heat = _attack_counts(board, us)
+    their_heat = _attack_counts(board, them)
+
+    if am_i_black_color:
+        our_heat = np.flipud(our_heat)
+        their_heat = np.flipud(their_heat)
+
+    heatmap_tensors = torch.from_numpy(
+        np.stack(
+            [
+                our_heat.astype(np.float32) / 15.0,
+                their_heat.astype(np.float32) / 15.0,
+            ],
+            axis=0,
+        )
+    )
+
     input_tensor = torch.vstack(
         [
             am_i_black_color_tensor,
@@ -59,6 +84,7 @@ def board2tensor(board: chess.Board) -> torch.Tensor:
             their_kingside_castling_rights_tensor,
             their_queenside_castling_rights_tensor,
             bitboard_tensors,
+            heatmap_tensors,
         ]
     )
 

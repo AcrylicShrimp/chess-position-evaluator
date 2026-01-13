@@ -1,4 +1,7 @@
-use chess::{BitBoard, Board, Color, EMPTY, Piece};
+use chess::{
+    BitBoard, Board, Color, EMPTY, Piece, get_bishop_moves, get_king_moves, get_knight_moves,
+    get_pawn_attacks, get_rook_moves,
+};
 use duckdb::{AccessMode, Config, Connection, Row, params};
 use rayon::prelude::*;
 use std::{path::Path, str::FromStr};
@@ -86,7 +89,8 @@ fn process_chunk(
 
 fn construct_chunk(chunk: Vec<ChessEvaluationRow>) -> (usize, Vec<u8>) {
     let mut row_count = 0;
-    let mut bytes = Vec::with_capacity((105 + 4) * chunk.len());
+    // 169 bytes of input (see below) + 4 bytes label
+    let mut bytes = Vec::with_capacity((169 + 4) * chunk.len());
 
     for row in chunk {
         let board = match Board::from_str(&row.fen) {
@@ -103,6 +107,7 @@ fn construct_chunk(chunk: Vec<ChessEvaluationRow>) -> (usize, Vec<u8>) {
         let bitflags = compute_bitflags(&board, us, them);
         let mut player_en_passant = compute_player_en_passant(&board);
         let mut pieces = compute_pieces(&board, us, them);
+        let mut heatmaps = compute_heatmaps(&board, us, them);
 
         if us == Color::Black {
             fn flip_vertical(bitboard: BitBoard) -> BitBoard {
@@ -113,6 +118,7 @@ fn construct_chunk(chunk: Vec<ChessEvaluationRow>) -> (usize, Vec<u8>) {
 
             player_en_passant = flip_vertical(player_en_passant);
             pieces = pieces.map(flip_vertical);
+            heatmaps = flip_vertical_heatmap(&heatmaps);
         }
 
         bytes.extend(bitflags.to_le_bytes());
@@ -121,6 +127,8 @@ fn construct_chunk(chunk: Vec<ChessEvaluationRow>) -> (usize, Vec<u8>) {
         for piece in pieces {
             bytes.extend(piece.0.to_le_bytes());
         }
+
+        bytes.extend_from_slice(&heatmaps);
 
         // label: 4 bytes
         let relative_cp = if us == Color::White { row.cp } else { -row.cp };
@@ -185,4 +193,74 @@ fn compute_pieces(board: &Board, us: Color, them: Color) -> [BitBoard; 12] {
         *board.pieces(Piece::Queen) & *board.color_combined(them),
         *board.pieces(Piece::King) & *board.color_combined(them),
     ]
+}
+
+fn compute_heatmaps(board: &Board, us: Color, them: Color) -> [u8; 64] {
+    let our_attacks = compute_color_attacks(board, us);
+    let their_attacks = compute_color_attacks(board, them);
+
+    let mut packed = [0u8; 64];
+    for i in 0..64 {
+        let ours = our_attacks[i].min(15);
+        let theirs = their_attacks[i].min(15);
+        packed[i] = (theirs << 4) | ours;
+    }
+
+    packed
+}
+
+fn compute_color_attacks(board: &Board, color: Color) -> [u8; 64] {
+    let occupancy = *board.combined();
+    let color_bb = *board.color_combined(color);
+    let mut counts = [0u8; 64];
+
+    let mut add_attacks = |attacks: BitBoard| {
+        for sq in attacks {
+            let idx = sq.to_index();
+            let next = counts[idx].saturating_add(1);
+            counts[idx] = next.min(15);
+        }
+    };
+
+    let pawns = *board.pieces(Piece::Pawn) & color_bb;
+    for from in pawns {
+        add_attacks(get_pawn_attacks(from, color, !EMPTY));
+    }
+
+    let knights = *board.pieces(Piece::Knight) & color_bb;
+    for from in knights {
+        add_attacks(get_knight_moves(from));
+    }
+
+    let bishops = *board.pieces(Piece::Bishop) & color_bb;
+    for from in bishops {
+        add_attacks(get_bishop_moves(from, occupancy));
+    }
+
+    let rooks = *board.pieces(Piece::Rook) & color_bb;
+    for from in rooks {
+        add_attacks(get_rook_moves(from, occupancy));
+    }
+
+    let queens = *board.pieces(Piece::Queen) & color_bb;
+    for from in queens {
+        add_attacks(get_bishop_moves(from, occupancy) | get_rook_moves(from, occupancy));
+    }
+
+    let kings = *board.pieces(Piece::King) & color_bb;
+    for from in kings {
+        add_attacks(get_king_moves(from));
+    }
+
+    counts
+}
+
+fn flip_vertical_heatmap(map: &[u8; 64]) -> [u8; 64] {
+    let mut flipped = [0u8; 64];
+    for rank in 0..8 {
+        let src = rank * 8;
+        let dst = (7 - rank) * 8;
+        flipped[dst..dst + 8].copy_from_slice(&map[src..src + 8]);
+    }
+    flipped
 }

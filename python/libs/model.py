@@ -23,7 +23,7 @@ def _material_feature(
     Compute (or inject) a normalized material difference feature.
 
     Args:
-        x: Board tensor shaped [B, 18, 8, 8] (before coords are added).
+        x: Board tensor shaped [B, 20, 8, 8] (before coords are added).
         material_weights: Piece values shaped [6].
         material_scale: Learnable scalar gate.
         material_diff: Optional precomputed raw material diff (my - enemy),
@@ -36,7 +36,7 @@ def _material_feature(
     batch = x.shape[0]
 
     if material_diff is None:
-        # Channels: 0-4 meta, 5 en-passant, 6-11 ours, 12-17 theirs.
+        # Channels: 0-4 meta, 5 en-passant, 6-11 ours, 12-17 theirs, 18-19 heatmaps.
         our_pieces = x[:, 6:12]
         enemy_pieces = x[:, 12:18]
         weights = material_weights.to(dtype=x.dtype, device=x.device).view(1, 6, 1, 1)
@@ -230,7 +230,7 @@ class ModelFull(torch.nn.Module):
         super().__init__()
         self.add_coords = AddCoords(8, 8)
         self.initial_block = torch.nn.Sequential(
-            torch.nn.Conv2d(22, CHANNELS, kernel_size=3, padding=1, bias=False),
+            torch.nn.Conv2d(24, CHANNELS, kernel_size=3, padding=1, bias=False),
             torch.nn.BatchNorm2d(CHANNELS),
             torch.nn.Hardswish(inplace=True),
         )
@@ -310,7 +310,7 @@ class EvalOnlyModel(torch.nn.Module):
 
         self.add_coords = AddCoords(8, 8)
         self.initial_block = torch.nn.Sequential(
-            torch.nn.Conv2d(22, CHANNELS, kernel_size=3, padding=1, bias=False),
+            torch.nn.Conv2d(24, CHANNELS, kernel_size=3, padding=1, bias=False),
             torch.nn.BatchNorm2d(CHANNELS),
             torch.nn.Hardswish(inplace=True),
         )

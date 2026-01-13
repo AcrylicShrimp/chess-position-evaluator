@@ -56,7 +56,7 @@ def run_export_onnx(model_name: str):
 
     # Export to ONNX
     print(f"[2/4] Exporting to ONNX (opset {OPSET_VERSION})")
-    dummy_input = torch.randn(EXAMPLE_BATCH_SIZE, 18, 8, 8)
+    dummy_input = torch.randn(EXAMPLE_BATCH_SIZE, 20, 8, 8)
 
     # For dynamo exporter: dynamic_shapes keys must match forward() arg names
     # EvalOnlyModel.forward(self, x) -> arg name is "x"
@@ -81,7 +81,7 @@ def run_export_onnx(model_name: str):
 
     # Validate outputs match
     print("[4/4] Validating outputs match (PyTorch vs ONNX Runtime)")
-    test_input = torch.randn(4, 18, 8, 8)  # batch of 4
+    test_input = torch.randn(4, 20, 8, 8)  # batch of 4
 
     with torch.no_grad():
         torch_output = model(test_input).numpy()
@@ -97,5 +97,5 @@ def run_export_onnx(model_name: str):
 
     print()
     print(f"Exported: {output_path}")
-    print(f"Input:    board [batch, 18, 8, 8]")
+    print(f"Input:    board [batch, 20, 8, 8]")
     print(f"Output:   value [batch, 1]")
