@@ -1,7 +1,7 @@
 import torch
 
 from libs.dataset import ChessEvaluationDataset
-from libs.model import EvalOnlyModel
+from libs.model import ValueOnlyModel
 from train.trainer import Trainer
 
 
@@ -56,7 +56,7 @@ def run_training(
         f"[✓] DataLoader workers: train={train_workers}, val={val_workers} | Upload checkpoints: {upload_checkpoints}"
     )
 
-    model = EvalOnlyModel()
+    model = ValueOnlyModel()
     trainer = Trainer(
         model=model,
         device=device,

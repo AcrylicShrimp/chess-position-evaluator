@@ -8,7 +8,7 @@ _MATERIAL_VALUES = torch.tensor([1.0, 3.0, 3.0, 5.0, 9.0, 0.0], dtype=torch.floa
 _MATERIAL_ALPHA = 5.0
 
 
-CHANNELS = 144
+CHANNELS = 256
 BLOCKS = 6
 
 
@@ -84,31 +84,6 @@ class AddCoords(torch.nn.Module):
         return torch.cat([x, coords_batch], dim=1)
 
 
-class DepthwiseSeparableConv(torch.nn.Module):
-    def __init__(self, in_channels, out_channels, stride=1):
-        super().__init__()
-        self.depthwise = torch.nn.Conv2d(
-            in_channels,
-            in_channels,
-            kernel_size=3,
-            padding=1,
-            stride=stride,
-            groups=in_channels,
-            bias=False,
-        )
-        self.pointwise = torch.nn.Conv2d(
-            in_channels, out_channels, kernel_size=1, bias=False
-        )
-        self.bn = torch.nn.BatchNorm2d(out_channels)
-
-    def forward(self, x):
-        out = self.depthwise(x)
-        out = self.pointwise(out)
-        out = self.bn(out)
-
-        return out
-
-
 class CoordinateAttention(torch.nn.Module):
     def __init__(self, channels: int, reduction: int):
         super().__init__()
@@ -140,6 +115,43 @@ class CoordinateAttention(torch.nn.Module):
         return x * a_h * a_w
 
 
+class GhostModule(torch.nn.Module):
+    def __init__(
+        self, inp, oup, kernel_size=1, ratio=2, dw_size=3, stride=1, relu=True
+    ):
+        super().__init__()
+        self.oup = oup
+        init_channels = max(8, oup // ratio)
+        new_channels = init_channels * (ratio - 1)
+
+        self.primary_conv = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                inp, init_channels, kernel_size, stride, kernel_size // 2, bias=False
+            ),
+            torch.nn.BatchNorm2d(init_channels),
+            torch.nn.Hardswish(inplace=True) if relu else torch.nn.Sequential(),
+        )
+        self.cheap_operation = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                init_channels,
+                new_channels,
+                dw_size,
+                1,
+                dw_size // 2,
+                groups=init_channels,
+                bias=False,
+            ),
+            torch.nn.BatchNorm2d(new_channels),
+            torch.nn.Hardswish(inplace=True) if relu else torch.nn.Sequential(),
+        )
+
+    def forward(self, x):
+        x1 = self.primary_conv(x)
+        x2 = self.cheap_operation(x1)
+        out = torch.cat([x1, x2], dim=1)
+        return out[:, : self.oup, :, :]
+
+
 class ChannelShuffle(torch.nn.Module):
     def __init__(self, groups: int = 2):
         super().__init__()
@@ -147,82 +159,96 @@ class ChannelShuffle(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         batch, channels, height, width = x.shape
-        if channels % self.groups != 0:
-            # ShuffleNetV2 requires channel count divisible by groups.
-            raise ValueError(
-                f"Channels {channels} must be divisible by groups {self.groups} for shuffle."
-            )
-
         x = x.reshape(batch, self.groups, channels // self.groups, height, width)
         x = x.transpose(1, 2).contiguous()
         return x.reshape(batch, channels, height, width)
 
 
-class ShuffleUnit(torch.nn.Module):
-    """
-    Standard ShuffleNet V2 unit (channel split -> branch compute -> concat -> shuffle).
-    Keeps spatial size and channel count; uses group=2 shuffle for mixing.
-    """
-
-    def __init__(self, channels: int):
+class GhostShuffleBlock(torch.nn.Module):
+    def __init__(self, channels: int, ratio: int = 2, dw_kernel_size: int = 3):
         super().__init__()
-        if channels % 2 != 0:
-            raise ValueError(
-                "ShuffleUnit requires even channel count for split/concat."
-            )
 
-        branch_channels = channels // 2
+        mid_channels = channels // 2
 
         self.branch2 = torch.nn.Sequential(
-            torch.nn.Conv2d(
-                branch_channels, branch_channels, kernel_size=1, bias=False
+            GhostModule(
+                mid_channels, mid_channels, kernel_size=1, ratio=ratio, relu=True
             ),
-            torch.nn.BatchNorm2d(branch_channels),
-            torch.nn.Hardswish(inplace=True),
             torch.nn.Conv2d(
-                branch_channels,
-                branch_channels,
-                kernel_size=3,
-                padding=1,
-                groups=branch_channels,
+                mid_channels,
+                mid_channels,
+                kernel_size=dw_kernel_size,
+                stride=1,
+                padding=dw_kernel_size // 2,
+                groups=mid_channels,
                 bias=False,
             ),
-            torch.nn.BatchNorm2d(branch_channels),
-            torch.nn.Conv2d(
-                branch_channels, branch_channels, kernel_size=1, bias=False
+            torch.nn.BatchNorm2d(mid_channels),
+            CoordinateAttention(mid_channels, 16),
+            GhostModule(
+                mid_channels, mid_channels, kernel_size=1, ratio=ratio, relu=False
             ),
-            torch.nn.BatchNorm2d(branch_channels),
             torch.nn.Hardswish(inplace=True),
         )
-        self.ca = CoordinateAttention(branch_channels, reduction=8)
+
         self.shuffle = ChannelShuffle(groups=2)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x1, x2 = torch.chunk(x, 2, dim=1)
-        y2 = self.branch2(x2)
-        y2 = self.ca(y2)
-        out = torch.cat([x1, y2], dim=1)
+        x1, x2 = x.chunk(2, dim=1)
+        x2 = self.branch2(x2)
+        out = torch.cat((x1, x2), dim=1)
         return self.shuffle(out)
 
 
-class ResidualBlock(torch.nn.Module):
-    def __init__(self, channels: int):
+class ValueHead(torch.nn.Module):
+    def __init__(self):
         super().__init__()
-        self.dsc1 = DepthwiseSeparableConv(channels, channels)
-        self.relu1 = torch.nn.Hardswish(inplace=True)
-        self.dsc2 = DepthwiseSeparableConv(channels, channels)
-        self.ca = CoordinateAttention(channels, reduction=8)
-        self.relu2 = torch.nn.Hardswish(inplace=True)
+        self.conv = torch.nn.Sequential(
+            torch.nn.Conv2d(CHANNELS, 2, kernel_size=1, bias=False),
+            torch.nn.BatchNorm2d(2),
+            torch.nn.Hardswish(inplace=True),
+        )
+        self.mlp = torch.nn.Sequential(
+            torch.nn.Linear(2 * 8 * 8 + 1, 64),
+            torch.nn.Hardswish(inplace=True),
+            torch.nn.Linear(64, 1),
+        )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        out = self.dsc1(x)
-        out = self.relu1(out)
-        out = self.dsc2(out)
-        out = self.ca(out)
-        out += x
-        out = self.relu2(out)
+        self.register_buffer("material_weights", _MATERIAL_VALUES)
 
-        return out
+    def forward(
+        self, x: torch.Tensor, material_diff: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        material_feature = _material_feature(
+            x=x,
+            material_weights=self.material_weights,
+            material_scale=1.0,
+            material_diff=material_diff,
+        )
+
+        out = self.conv(x)
+        out = out.flatten(start_dim=1)
+        out = torch.cat([out, material_feature], dim=1)
+        return self.mlp(out)
+
+
+class PolicyHead(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Sequential(
+            torch.nn.Conv2d(CHANNELS, 16, kernel_size=1, bias=False),
+            torch.nn.BatchNorm2d(16),
+            torch.nn.Hardswish(inplace=True),
+        )
+
+        self.mlp = torch.nn.Sequential(
+            torch.nn.Linear(16 * 8 * 8, TOTAL_MOVES),
+        )
+
+    def forward(self, x):
+        out = self.conv(x)
+        out = out.flatten(start_dim=1)
+        return self.mlp(out)
 
 
 class ModelFull(torch.nn.Module):
@@ -235,76 +261,43 @@ class ModelFull(torch.nn.Module):
             torch.nn.Hardswish(inplace=True),
         )
 
-        self.residual_blocks = torch.nn.Sequential(
-            *[ShuffleUnit(CHANNELS) for _ in range(BLOCKS)],
+        self.blocks = torch.nn.Sequential(
+            *[GhostShuffleBlock(CHANNELS, ratio=4) for _ in range(BLOCKS)],
         )
 
-        self.register_buffer("material_weights", _MATERIAL_VALUES)
-
-        self.value_conv = torch.nn.Sequential(
-            torch.nn.Conv2d(CHANNELS, 2, kernel_size=1, bias=False),
-            torch.nn.BatchNorm2d(2),
-            torch.nn.Hardswish(inplace=True),
-            torch.nn.Flatten(),
-        )
-        self.value_mlp = torch.nn.Sequential(
-            torch.nn.Linear(2 * 8 * 8 + 1, 64),
-            torch.nn.Hardswish(inplace=True),
-            torch.nn.Linear(64, 1),
-        )
-        self.policy_head = torch.nn.Sequential(
-            torch.nn.Conv2d(CHANNELS, 16, kernel_size=1, bias=False),
-            torch.nn.BatchNorm2d(16),
-            torch.nn.Hardswish(inplace=True),
-            torch.nn.Flatten(),
-            torch.nn.Linear(16 * 8 * 8, TOTAL_MOVES),
-        )
+        self.value_head = ValueHead()
+        self.policy_head = PolicyHead()
 
     def forward(
         self, x: torch.Tensor, material_diff: torch.Tensor | None = None
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        material_feature = _material_feature(
-            x=x,
-            material_weights=self.material_weights,
-            material_scale=1.0,
-            material_diff=material_diff,
-        )
-
         out = self.add_coords(x)
         out = self.initial_block(out)
-        out = self.residual_blocks(out)
+        out = self.blocks(out)
 
-        value_flat = self.value_conv(out)
-        value = self.value_mlp(torch.cat([value_flat, material_feature], dim=1))
+        value = self.value_head(out, material_diff)
+        policy = self.policy_head(out)
 
-        return value, self.policy_head(out)
+        return value, policy
 
-    def forward_eval(
+    def forward_value(
         self, x: torch.Tensor, material_diff: torch.Tensor | None = None
     ) -> torch.Tensor:
-        material_feature = _material_feature(
-            x=x,
-            material_weights=self.material_weights,
-            material_scale=1.0,
-            material_diff=material_diff,
-        )
-
         out = self.add_coords(x)
         out = self.initial_block(out)
-        out = self.residual_blocks(out)
+        out = self.blocks(out)
 
-        value_flat = self.value_conv(out)
-        return self.value_mlp(torch.cat([value_flat, material_feature], dim=1))
+        return self.value_head(out, material_diff)
 
     def forward_policy(self, x: torch.Tensor) -> torch.Tensor:
         out = self.add_coords(x)
         out = self.initial_block(out)
-        out = self.residual_blocks(out)
+        out = self.blocks(out)
 
         return self.policy_head(out)
 
 
-class EvalOnlyModel(torch.nn.Module):
+class ValueOnlyModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
@@ -315,37 +308,17 @@ class EvalOnlyModel(torch.nn.Module):
             torch.nn.Hardswish(inplace=True),
         )
 
-        self.residual_blocks = torch.nn.Sequential(
-            *[ShuffleUnit(CHANNELS) for _ in range(BLOCKS)],
+        self.blocks = torch.nn.Sequential(
+            *[GhostShuffleBlock(CHANNELS, ratio=4) for _ in range(BLOCKS)],
         )
 
-        self.register_buffer("material_weights", _MATERIAL_VALUES)
-
-        self.value_conv = torch.nn.Sequential(
-            torch.nn.Conv2d(CHANNELS, 2, kernel_size=1, bias=False),
-            torch.nn.BatchNorm2d(2),
-            torch.nn.Hardswish(inplace=True),
-            torch.nn.Flatten(),
-        )
-        self.value_mlp = torch.nn.Sequential(
-            torch.nn.Linear(2 * 8 * 8 + 1, 64),
-            torch.nn.Hardswish(inplace=True),
-            torch.nn.Linear(64, 1),
-        )
+        self.value_head = ValueHead()
 
     def forward(
         self, x: torch.Tensor, material_diff: torch.Tensor | None = None
     ) -> torch.Tensor:
-        material_feature = _material_feature(
-            x=x,
-            material_weights=self.material_weights,
-            material_scale=1.0,
-            material_diff=material_diff,
-        )
-
         out = self.add_coords(x)
         out = self.initial_block(out)
-        out = self.residual_blocks(out)
+        out = self.blocks(out)
 
-        value_flat = self.value_conv(out)
-        return self.value_mlp(torch.cat([value_flat, material_feature], dim=1))
+        return self.value_head(out, material_diff)

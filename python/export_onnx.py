@@ -1,5 +1,5 @@
 """
-Export EvalOnlyModel to ONNX format.
+Export ValueOnlyModel to ONNX format.
 
 Usage:
     cpe export-onnx <model-name>
@@ -18,7 +18,7 @@ import onnxruntime as ort
 import torch
 from torch.export import Dim
 
-from libs.model import EvalOnlyModel
+from libs.model import ValueOnlyModel
 
 
 CHECKPOINTS_DIR = "models/checkpoints"
@@ -49,7 +49,7 @@ def run_export_onnx(model_name: str):
 
     # Load model
     print(f"[1/4] Loading model from {input_path}")
-    model = EvalOnlyModel()
+    model = ValueOnlyModel()
     checkpoint = torch.load(input_path, map_location="cpu", weights_only=False)
     model.load_state_dict(checkpoint["model"])
     model.eval()
@@ -59,7 +59,7 @@ def run_export_onnx(model_name: str):
     dummy_input = torch.randn(EXAMPLE_BATCH_SIZE, 20, 8, 8)
 
     # For dynamo exporter: dynamic_shapes keys must match forward() arg names
-    # EvalOnlyModel.forward(self, x) -> arg name is "x"
+    # ValueOnlyModel.forward(self, x) -> arg name is "x"
     batch_dim = Dim("batch", min=1)
 
     torch.onnx.export(

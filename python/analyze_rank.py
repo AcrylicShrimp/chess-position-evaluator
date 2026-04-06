@@ -17,7 +17,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from libs.dataset import ChessEvaluationDataset
-from libs.model import EvalOnlyModel
+from libs.model import ValueOnlyModel
 
 
 CHECKPOINTS_DIR = "models/checkpoints"
@@ -54,7 +54,7 @@ def run_analyze_rank(model_name: str):
     print()
 
     # Load model
-    model = EvalOnlyModel()
+    model = ValueOnlyModel()
     checkpoint = torch.load(model_path, map_location=device, weights_only=False)
     model.load_state_dict(checkpoint["model"])
     model.to(device)
@@ -90,7 +90,7 @@ def run_analyze_rank(model_name: str):
         print()
 
 
-def register_hooks(model: EvalOnlyModel) -> dict:
+def register_hooks(model: ValueOnlyModel) -> dict:
     """Register forward hooks to capture activations at key layers."""
     activations = {}
 
@@ -188,5 +188,3 @@ def print_ascii_plot(name: str, singular_values: torch.Tensor, eff_rank: int):
 
         print(f"{idx + 1:3d}: {bar:<{bar_width}} {val:.4f}{marker}")
         prev_idx = idx
-
-

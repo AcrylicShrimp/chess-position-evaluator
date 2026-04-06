@@ -3,7 +3,7 @@ import random
 import torch
 
 from libs.scoring import board2score
-from libs.model import EvalOnlyModel
+from libs.model import ValueOnlyModel
 
 from battle.compute_ordered_moves import (
     compute_ordered_moves,
@@ -32,7 +32,7 @@ transposition_table = {}
 
 def negamax(
     board: chess.Board,
-    model: EvalOnlyModel,
+    model: ValueOnlyModel,
     device: torch.device,
     depth: int,
     alpha: float,
@@ -80,7 +80,7 @@ def negamax(
 
 
 def find_best_move(
-    board: chess.Board, model: EvalOnlyModel, device: torch.device, depth: int
+    board: chess.Board, model: ValueOnlyModel, device: torch.device, depth: int
 ) -> chess.Move | None:
     if board.is_game_over(claim_draw=True):
         return None

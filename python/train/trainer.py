@@ -6,13 +6,13 @@ import torch
 import wandb
 from tqdm import tqdm
 
-from libs.model import EvalOnlyModel
+from libs.model import ValueOnlyModel
 
 
 class Trainer:
     def __init__(
         self,
-        model: EvalOnlyModel,
+        model: ValueOnlyModel,
         device: torch.device,
         experiment_name: str,
         lr: float,
@@ -40,13 +40,11 @@ class Trainer:
             device.type == "cuda" and not torch.cuda.is_bf16_supported(False)
         )
 
-        self.optimizer = torch.optim.AdamW(
-            model.parameters(), lr=lr, weight_decay=wd)
+        self.optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
             self.optimizer, T_0=t0, T_mult=t_mult, eta_min=eta_min
         )
-        self.grad_scaler = torch.amp.GradScaler(
-            enabled=self.enable_grad_scaler)
+        self.grad_scaler = torch.amp.GradScaler(enabled=self.enable_grad_scaler)
 
         self.model.to(self.device)
 
@@ -128,8 +126,7 @@ class Trainer:
             type="model",
             description="Training checkpoint",
         )
-        artifact.add_file(
-            checkpoint_path, name=os.path.basename(checkpoint_path))
+        artifact.add_file(checkpoint_path, name=os.path.basename(checkpoint_path))
         wandb.log_artifact(artifact, aliases=aliases)
 
     def train(
@@ -205,8 +202,7 @@ class Trainer:
                         os._exit(0)
 
                 self.save_checkpoint(checkpoint_path, epoch)
-                print(
-                    f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
+                print(f"[✓] Epoch {epoch + 1} completed — Final Loss: {avg_loss:.4f}")
 
                 self.model.eval()
 
@@ -259,4 +255,6 @@ class Trainer:
 
 
 def compute_loss(output: torch.Tensor, label: torch.Tensor) -> torch.Tensor:
-    return torch.nn.functional.binary_cross_entropy_with_logits(output.float(), label.float())
+    return torch.nn.functional.binary_cross_entropy_with_logits(
+        output.float(), label.float()
+    )

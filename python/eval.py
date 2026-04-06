@@ -3,7 +3,7 @@ import os
 import torch
 
 from libs.encoding import fen2tensor
-from libs.model import EvalOnlyModel
+from libs.model import ValueOnlyModel
 
 
 CHECKPOINTS_DIR = "models/checkpoints"
@@ -28,7 +28,7 @@ def run_eval(model_name: str):
         print(f"Error: {checkpoint_path} not found")
         return
 
-    model = EvalOnlyModel()
+    model = ValueOnlyModel()
     model.to(device)
 
     checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -84,5 +84,3 @@ def run_eval(model_name: str):
 
 def centipawn_to_win_prob(cp: int) -> float:
     return 1.0 / (1.0 + 10.0 ** (float(-cp) / 400.0))
-
-
