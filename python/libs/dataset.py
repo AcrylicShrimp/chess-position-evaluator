@@ -5,6 +5,9 @@ from typing import BinaryIO
 
 from libs.encoding import bitboards2tensors, boolean2tensor
 
+CHESS_EVALUATION_ROW_FORMAT = "<BQ12Q64Bf"
+CHESS_EVALUATION_ROW_SIZE = struct.calcsize(CHESS_EVALUATION_ROW_FORMAT)
+
 
 class ChessEvaluationDataset(torch.utils.data.Dataset):
     def __init__(self, path: str):
@@ -21,7 +24,12 @@ class ChessEvaluationDataset(torch.utils.data.Dataset):
         return self.len
 
     def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor]:
-        row = self.mm[index * 173 : (index + 1) * 173]
+        if self.mm is None:
+            self.open_file()
+
+        row_start = index * CHESS_EVALUATION_ROW_SIZE
+        row_end = row_start + CHESS_EVALUATION_ROW_SIZE
+        row = self.mm[row_start:row_end]
         return read_chess_evaluation(row.tobytes())
 
 
@@ -33,7 +41,7 @@ def read_chess_evaluation_length(file: BinaryIO) -> int:
 def read_chess_evaluation(
     row: bytes,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    unpacked = struct.unpack("<BQ12Q64Bf", row)
+    unpacked = struct.unpack(CHESS_EVALUATION_ROW_FORMAT, row)
     bitflags = unpacked[0]
     player_en_passant = unpacked[1]
     pieces = unpacked[2:14]  # 12 Q-words

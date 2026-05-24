@@ -7,7 +7,8 @@ from train.trainer import Trainer
 
 def worker_init_fn(_: int):
     worker_info = torch.utils.data.get_worker_info()
-    worker_info.dataset.open_file()
+    if worker_info is not None:
+        worker_info.dataset.open_file()
 
 
 def run_training(
