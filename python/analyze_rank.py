@@ -10,8 +10,8 @@ Interpretation:
     - Plateau, doesn't reach ~0: Under-parameterized
 """
 
-import os
 import sys
+from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
@@ -20,8 +20,8 @@ from libs.dataset import ChessEvaluationDataset
 from libs.model import ValueOnlyModel
 
 
-CHECKPOINTS_DIR = "models/checkpoints"
-DATASET_PATH = "validation.chesseval"
+CHECKPOINTS_DIR = Path("models/checkpoints")
+DATASET_PATH = Path("validation.chesseval")
 NUM_SAMPLES = 2000
 BATCH_SIZE = 256
 RANK_THRESHOLD = 0.01  # 1% of max singular value
@@ -29,14 +29,12 @@ RANK_THRESHOLD = 0.01  # 1% of max singular value
 
 def run_analyze_rank(model_name: str):
     """Analyze activation rank for the given model."""
-    model_path = os.path.join(CHECKPOINTS_DIR, f"{model_name}.pth")
+    model_path = CHECKPOINTS_DIR / f"{model_name}.pth"
 
-    if not os.path.exists(model_path):
-        print(f"Error: {model_path} not found")
-        sys.exit(1)
-
-    if not os.path.exists(DATASET_PATH):
-        print(f"Error: {DATASET_PATH} not found")
+    try:
+        validate_input_paths(model_path, DATASET_PATH)
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}")
         sys.exit(1)
 
     # Select device
@@ -90,6 +88,15 @@ def run_analyze_rank(model_name: str):
         print()
 
 
+def validate_input_paths(model_path: Path, dataset_path: Path) -> None:
+    """Fail before model or dataset setup when required artifacts are absent."""
+    if not model_path.exists():
+        raise FileNotFoundError(f"{model_path} not found")
+
+    if not dataset_path.exists():
+        raise FileNotFoundError(f"{dataset_path} not found")
+
+
 def register_hooks(model: ValueOnlyModel) -> dict:
     """Register forward hooks to capture activations at key layers."""
     activations = {}
@@ -106,12 +113,13 @@ def register_hooks(model: ValueOnlyModel) -> dict:
     # Hook initial_block output
     model.initial_block.register_forward_hook(make_hook("initial_block"))
 
-    # Hook each residual block output
-    for i, block in enumerate(model.residual_blocks):
-        model.residual_blocks[i].register_forward_hook(make_hook(f"residual_block_{i}"))
+    # Hook each current trunk block output.
+    for i, block in enumerate(model.blocks):
+        block.register_forward_hook(make_hook(f"block_{i}"))
 
-    # Hook value_head linear layer (index 4: Linear 128->128)
-    model.value_head[4].register_forward_hook(make_hook("value_head_linear"))
+    # Hook named value head modules.
+    model.value_head.conv.register_forward_hook(make_hook("value_head_conv"))
+    model.value_head.mlp.register_forward_hook(make_hook("value_head_mlp"))
 
     return activations
 
