@@ -30,6 +30,18 @@ def prob_to_score(prob: float) -> float:
 transposition_table = {}
 
 
+def terminal_score(board: chess.Board) -> float | None:
+    outcome = board.outcome(claim_draw=True)
+
+    if outcome is None:
+        return None
+
+    if outcome.winner is None:
+        return DRAW_SCORE
+
+    return MATE_SCORE if outcome.winner == board.turn else -MATE_SCORE
+
+
 def negamax(
     board: chess.Board,
     model: ValueOnlyModel,
@@ -44,10 +56,10 @@ def negamax(
     if state_key in transposition_table:
         return transposition_table[state_key]
 
-    outcome = board.outcome(claim_draw=True)
+    score = terminal_score(board)
 
-    if outcome is not None:
-        return DRAW_SCORE
+    if score is not None:
+        return score
 
     if depth == 0:
         white_win_prob = board2score(board, model, device)

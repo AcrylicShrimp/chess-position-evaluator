@@ -1,8 +1,9 @@
 import os
 
+import chess
 import torch
 
-from libs.encoding import fen2tensor
+from libs.encoding import board2tensor
 from libs.model import ValueOnlyModel
 
 
@@ -56,25 +57,26 @@ def run_eval(model_name: str):
             break
 
         try:
-            input_tensor = fen2tensor(fen)
+            board = chess.Board(fen)
+            input_tensor = board2tensor(board)
             input_tensor = input_tensor.unsqueeze(0)
             input_tensor = input_tensor.to(device)
 
             with torch.no_grad():
                 output = model(input_tensor)
-                win_prob = torch.sigmoid(output).item()
-                print(f"Win Probability: {win_prob:.2f}")
+                side_to_move_win_prob = torch.sigmoid(output).item()
+                white_win_prob = side_to_move_prob_to_white_prob(
+                    side_to_move_win_prob, board.turn
+                )
+                black_win_prob = 1.0 - white_win_prob
+                side_to_move = "White" if board.turn == chess.WHITE else "Black"
 
-                if win_prob >= centipawn_to_win_prob(300):
-                    print("White is winning")
-                elif win_prob >= centipawn_to_win_prob(150):
-                    print("White has a small advantage")
-                elif win_prob <= (1 - centipawn_to_win_prob(300)):
-                    print("Black is winning")
-                elif win_prob <= (1 - centipawn_to_win_prob(150)):
-                    print("Black has a small advantage")
-                else:
-                    print("Both sides are equal")
+                print(
+                    f"{side_to_move} to move win probability: {side_to_move_win_prob:.2f}"
+                )
+                print(f"White win probability: {white_win_prob:.2f}")
+                print(f"Black win probability: {black_win_prob:.2f}")
+                print(describe_white_win_prob(white_win_prob))
 
         except Exception as e:
             print(f"Error evaluating position: {e}")
@@ -84,3 +86,25 @@ def run_eval(model_name: str):
 
 def centipawn_to_win_prob(cp: int) -> float:
     return 1.0 / (1.0 + 10.0 ** (float(-cp) / 400.0))
+
+
+def side_to_move_prob_to_white_prob(
+    side_to_move_win_prob: float, turn: chess.Color
+) -> float:
+    return (
+        side_to_move_win_prob
+        if turn == chess.WHITE
+        else 1.0 - side_to_move_win_prob
+    )
+
+
+def describe_white_win_prob(white_win_prob: float) -> str:
+    if white_win_prob >= centipawn_to_win_prob(300):
+        return "White is winning"
+    if white_win_prob >= centipawn_to_win_prob(150):
+        return "White has a small advantage"
+    if white_win_prob <= (1 - centipawn_to_win_prob(300)):
+        return "Black is winning"
+    if white_win_prob <= (1 - centipawn_to_win_prob(150)):
+        return "Black has a small advantage"
+    return "Both sides are equal"
