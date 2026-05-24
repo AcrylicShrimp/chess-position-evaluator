@@ -226,10 +226,15 @@ class Trainer:
 
                 avg_validation_loss = validation_loss_acc / validation_steps
 
+                is_best_validation_loss = avg_validation_loss < self.best_validation_loss
+                if is_best_validation_loss:
+                    self.best_validation_loss = avg_validation_loss
+
                 wandb.log(
                     {
                         "val/loss": avg_validation_loss,
                         "val/best_loss": self.best_validation_loss,
+                        "val/is_best": is_best_validation_loss,
                     },
                     step=(epoch + 1) * steps_per_epoch,
                 )
@@ -239,8 +244,7 @@ class Trainer:
                 # Step cosine scheduler per epoch
                 self.scheduler.step(epoch + 1)
 
-                if avg_validation_loss < self.best_validation_loss:
-                    self.best_validation_loss = avg_validation_loss
+                if is_best_validation_loss:
                     self.save_checkpoint(best_checkpoint_path, epoch + 1)
                     self._upload_checkpoint(
                         best_checkpoint_path,
