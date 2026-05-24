@@ -5,6 +5,7 @@ Usage:
     cpe train <experiment-name> --epochs N --steps N --batch N --lr F --wd F --patience N --factor F [--resume]
     cpe analyze-rank <model-name>
     cpe eval <model-name>
+    cpe battle <model-name>
     cpe export-onnx <model-name>
 """
 
@@ -132,6 +133,19 @@ def eval(
     from eval import run_eval
 
     run_eval(model_name)
+
+
+@app.command()
+def battle(
+    model_name: str = typer.Argument(
+        ...,
+        help="Model name without .pth extension.",
+    ),
+):
+    """Play against the AI."""
+    from battle.entry import run_battle
+
+    run_battle(model_name)
 
 
 @app.command("export-onnx")
