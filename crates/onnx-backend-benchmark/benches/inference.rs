@@ -8,7 +8,7 @@ fn get_model_path() -> PathBuf {
     // Go up two levels to reach workspace root
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     PathBuf::from(manifest_dir)
-        .join("../../models/onnx/small-0.6337-model-best.onnx")
+        .join("../../models/onnx/ghost-ca-r4-256ch-6blk-best.onnx")
 }
 
 /// Benchmark latency for different batch sizes.

@@ -1,5 +1,4 @@
 import torch
-import torch.nn.functional as F
 
 from libs.movement import TOTAL_MOVES
 
@@ -98,8 +97,8 @@ class CoordinateAttention(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         _b, _c, h, w = x.shape
 
-        x_h = F.adaptive_avg_pool2d(x, (h, 1))
-        x_w = F.adaptive_avg_pool2d(x, (1, w)).permute(0, 1, 3, 2)
+        x_h = x.mean(dim=3, keepdim=True)
+        x_w = x.mean(dim=2, keepdim=True).permute(0, 1, 3, 2)
 
         y = torch.cat([x_h, x_w], dim=2)
         y = self.reduce(y)

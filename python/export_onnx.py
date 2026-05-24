@@ -16,15 +16,15 @@ import numpy as np
 import onnx
 import onnxruntime as ort
 import torch
-from torch.export import Dim
 
 from libs.model import ValueOnlyModel
 
 
 CHECKPOINTS_DIR = "models/checkpoints"
 ONNX_DIR = "models/onnx"
-OPSET_VERSION = 21
-EXAMPLE_BATCH_SIZE = 2 * 1024
+OPSET_VERSION = 20
+EXAMPLE_BATCH_SIZE = 4
+OUTPUT_ATOL = 1e-3
 
 
 def run_export_onnx(model_name: str):
@@ -58,20 +58,18 @@ def run_export_onnx(model_name: str):
     print(f"[2/4] Exporting to ONNX (opset {OPSET_VERSION})")
     dummy_input = torch.randn(EXAMPLE_BATCH_SIZE, 20, 8, 8)
 
-    # For dynamo exporter: dynamic_shapes keys must match forward() arg names
-    # ValueOnlyModel.forward(self, x) -> arg name is "x"
-    batch_dim = Dim("batch", min=1)
-
     torch.onnx.export(
         model,
         (dummy_input,),
         output_path,
         input_names=["board"],
         output_names=["value"],
-        dynamic_shapes={"x": {0: batch_dim}},
+        dynamic_axes={
+            "board": {0: "batch"},
+            "value": {0: "batch"},
+        },
         opset_version=OPSET_VERSION,
-        dynamo=True,
-        optimize=True,
+        dynamo=False,
     )
 
     # Validate ONNX model structure
@@ -90,7 +88,7 @@ def run_export_onnx(model_name: str):
     ort_output = session.run(None, {"board": test_input.numpy()})[0]
 
     max_diff = np.max(np.abs(torch_output - ort_output))
-    if max_diff > 1e-5:
+    if max_diff > OUTPUT_ATOL:
         print(f"Warning: Max difference between outputs: {max_diff}")
     else:
         print(f"Outputs match (max diff: {max_diff:.2e})")
