@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "chess-position-evaluator"
 version = "0.1.0"
@@ -21,7 +25,16 @@ dependencies = [
 ]
 
 [project.scripts]
-cpe = "python.cli:app"
+cpe = "cli:app"
+
+[tool.setuptools]
+package-dir = { "" = "python" }
+py-modules = ["analyze_rank", "cli", "eval", "export_onnx"]
+
+[tool.setuptools.packages.find]
+where = ["python"]
+include = ["battle*", "libs*", "train*"]
+exclude = ["tests*"]
 
 [tool.uv]
 index = [

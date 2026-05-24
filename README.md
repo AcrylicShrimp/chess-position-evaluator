@@ -77,27 +77,32 @@ Training data comes from the [Lichess Evaluation Database](https://database.lich
 git clone https://github.com/AcrylicShrimp/chess-position-evaluator.git
 cd chess-position-evaluator
 
-# Create virtual environment (recommended)
-python -m venv venv
-source venv/bin/activate  # or `venv\Scripts\activate` on Windows
-
-# Install dependencies
-pip install -r requirements.txt
+# Sync dependencies into the project-managed virtual environment
+uv sync
 ```
 
+The project uses uv-managed environments. You do not need to activate the
+virtual environment manually for normal commands; run them through `uv run`.
+
 ### Quick Start
+
+**Show available commands:**
+
+```bash
+uv run cpe --help
+```
 
 **Evaluate a position:**
 
 ```bash
-python src/eval.py
+uv run cpe eval <model-name>
 # Enter FEN strings to get win probability assessments
 ```
 
 **Play against the AI:**
 
 ```bash
-python src/battle.py
+uv run cpe battle <model-name>
 # You'll be assigned a random color and can play using algebraic notation (e.g., e4, Nf3)
 ```
 
