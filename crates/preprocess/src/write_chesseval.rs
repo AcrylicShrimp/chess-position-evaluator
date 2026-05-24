@@ -3,9 +3,8 @@ use chess::{
     get_pawn_attacks, get_rook_moves,
 };
 use duckdb::{AccessMode, Config, Connection, Row, params};
-use rayon::prelude::*;
+use std::io::{Seek, SeekFrom, Write};
 use std::{path::Path, str::FromStr};
-use tokio::fs::OpenOptions;
 
 struct ChessEvaluationRow {
     fen: String,
@@ -31,37 +30,36 @@ pub async fn write_chesseval(
     offset: i64,
     limit: i64,
 ) -> Result<(), anyhow::Error> {
-    use tokio::io::AsyncWriteExt;
-
-    const CHUNK_SIZE: usize = 1024 * 1024;
+    const CHUNK_SIZE: usize = 256 * 1024;
 
     let duckdb_temp_path = duckdb_temp_path.as_ref();
     let path = path.as_ref();
 
-    let processed = (offset..offset + limit)
-        .step_by(CHUNK_SIZE)
-        .par_bridge()
-        .map(|chunk_offset| {
-            let chunk_size = std::cmp::min(CHUNK_SIZE, (offset + limit - chunk_offset) as usize);
-            process_chunk(chunk_size, chunk_offset, duckdb_temp_path)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
 
-    let mut file = OpenOptions::new()
+    let mut file = std::fs::OpenOptions::new()
         .create(true)
         .truncate(true)
         .write(true)
-        .open(path)
-        .await?;
+        .open(path)?;
 
-    let total_row_count: usize = processed.iter().map(|(row_count, _)| row_count).sum();
+    let mut total_row_count = 0usize;
 
-    // metadata: length (8 bytes unsigned integer)
-    file.write_u64_le(total_row_count as u64).await?;
+    // Write a placeholder length, stream the rows, then seek back to finalize it.
+    file.write_all(&0u64.to_le_bytes())?;
 
-    for (_, bytes) in processed {
-        file.write_all(&bytes).await?;
+    for chunk_offset in (offset..offset + limit).step_by(CHUNK_SIZE) {
+        let chunk_size = std::cmp::min(CHUNK_SIZE, (offset + limit - chunk_offset) as usize);
+        let (row_count, bytes) = process_chunk(chunk_size, chunk_offset, duckdb_temp_path)?;
+        total_row_count += row_count;
+        file.write_all(&bytes)?;
     }
+
+    file.seek(SeekFrom::Start(0))?;
+    file.write_all(&(total_row_count as u64).to_le_bytes())?;
+    file.flush()?;
 
     Ok(())
 }
@@ -77,68 +75,65 @@ fn process_chunk(
     )?;
 
     let mut stmt = conn.prepare("SELECT fen, cp FROM rows OFFSET ?1 LIMIT ?2")?;
-    let chunk = stmt
-        .query_and_then(
-            params![chunk_offset, chunk_size],
-            extract_chess_evaluation_row,
-        )?
-        .collect::<Result<Vec<_>, _>>()?;
+    let rows = stmt.query_and_then(
+        params![chunk_offset, chunk_size],
+        extract_chess_evaluation_row,
+    )?;
 
-    Ok(construct_chunk(chunk))
-}
-
-fn construct_chunk(chunk: Vec<ChessEvaluationRow>) -> (usize, Vec<u8>) {
     let mut row_count = 0;
-    // 169 bytes of input (see below) + 4 bytes label
-    let mut bytes = Vec::with_capacity((169 + 4) * chunk.len());
+    let mut bytes = Vec::with_capacity((169 + 4) * chunk_size);
 
-    for row in chunk {
-        let board = match Board::from_str(&row.fen) {
-            Ok(board) => board,
-            Err(_) => {
-                // ignore invalid FENs
-                continue;
-            }
-        };
-        let us = board.side_to_move();
-        let them = !us;
-
-        // input: 105 bytes
-        let bitflags = compute_bitflags(&board, us, them);
-        let mut player_en_passant = compute_player_en_passant(&board);
-        let mut pieces = compute_pieces(&board, us, them);
-        let mut heatmaps = compute_heatmaps(&board, us, them);
-
-        if us == Color::Black {
-            fn flip_vertical(bitboard: BitBoard) -> BitBoard {
-                let mut bytes = bitboard.0.to_ne_bytes();
-                bytes.reverse();
-                BitBoard(u64::from_ne_bytes(bytes))
-            }
-
-            player_en_passant = flip_vertical(player_en_passant);
-            pieces = pieces.map(flip_vertical);
-            heatmaps = flip_vertical_heatmap(&heatmaps);
+    for row in rows {
+        if append_row(row?, &mut bytes) {
+            row_count += 1;
         }
-
-        bytes.extend(bitflags.to_le_bytes());
-        bytes.extend(player_en_passant.0.to_le_bytes());
-
-        for piece in pieces {
-            bytes.extend(piece.0.to_le_bytes());
-        }
-
-        bytes.extend_from_slice(&heatmaps);
-
-        // label: 4 bytes
-        let relative_cp = if us == Color::White { row.cp } else { -row.cp };
-        let win_prob = centipawn_to_win_prob(relative_cp);
-        bytes.extend(win_prob.to_le_bytes());
-
-        row_count += 1;
     }
 
-    (row_count, bytes)
+    Ok((row_count, bytes))
+}
+
+fn append_row(row: ChessEvaluationRow, bytes: &mut Vec<u8>) -> bool {
+    let board = match Board::from_str(&row.fen) {
+        Ok(board) => board,
+        Err(_) => {
+            // ignore invalid FENs
+            return false;
+        }
+    };
+    let us = board.side_to_move();
+    let them = !us;
+
+    let bitflags = compute_bitflags(&board, us, them);
+    let mut player_en_passant = compute_player_en_passant(&board);
+    let mut pieces = compute_pieces(&board, us, them);
+    let mut heatmaps = compute_heatmaps(&board, us, them);
+
+    if us == Color::Black {
+        fn flip_vertical(bitboard: BitBoard) -> BitBoard {
+            let mut bytes = bitboard.0.to_ne_bytes();
+            bytes.reverse();
+            BitBoard(u64::from_ne_bytes(bytes))
+        }
+
+        player_en_passant = flip_vertical(player_en_passant);
+        pieces = pieces.map(flip_vertical);
+        heatmaps = flip_vertical_heatmap(&heatmaps);
+    }
+
+    bytes.extend(bitflags.to_le_bytes());
+    bytes.extend(player_en_passant.0.to_le_bytes());
+
+    for piece in pieces {
+        bytes.extend(piece.0.to_le_bytes());
+    }
+
+    bytes.extend_from_slice(&heatmaps);
+
+    let relative_cp = if us == Color::White { row.cp } else { -row.cp };
+    let win_prob = centipawn_to_win_prob(relative_cp);
+    bytes.extend(win_prob.to_le_bytes());
+
+    true
 }
 
 fn compute_bitflags(board: &Board, us: Color, them: Color) -> u8 {
