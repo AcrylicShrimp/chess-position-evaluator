@@ -11,6 +11,36 @@ CHANNELS = 256
 BLOCKS = 6
 
 
+def _material_diff_from_board(
+    board: torch.Tensor,
+    material_weights: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Compute raw material difference (our material - enemy material).
+
+    Args:
+        board: Board tensor shaped [B, 20, 8, 8] before coords are added.
+        material_weights: Piece values shaped [6].
+
+    Returns:
+        Tensor of shape [B].
+    """
+    if not torch.jit.is_tracing() and (board.dim() != 4 or board.shape[1] != 20):
+        raise ValueError(
+            "material diff requires a board tensor shaped [B, 20, 8, 8]"
+        )
+
+    # Channels: 0-4 meta, 5 en-passant, 6-11 ours, 12-17 theirs, 18-19 heatmaps.
+    our_pieces = board[:, 6:12]
+    enemy_pieces = board[:, 12:18]
+    weights = material_weights.to(dtype=board.dtype, device=board.device).view(
+        1, 6, 1, 1
+    )
+    our_score = (our_pieces * weights).sum(dim=(1, 2, 3))
+    enemy_score = (enemy_pieces * weights).sum(dim=(1, 2, 3))
+    return our_score - enemy_score
+
+
 def _material_feature(
     x: torch.Tensor,
     material_weights: torch.Tensor,
@@ -22,9 +52,9 @@ def _material_feature(
     Compute (or inject) a normalized material difference feature.
 
     Args:
-        x: Board tensor shaped [B, 20, 8, 8] (before coords are added).
+        x: Board tensor shaped [B, 20, 8, 8] when material_diff is not provided.
         material_weights: Piece values shaped [6].
-        material_scale: Learnable scalar gate.
+        material_scale: Scalar multiplier.
         material_diff: Optional precomputed raw material diff (my - enemy),
             shaped [B] or [B, 1]. If None, it is derived from x.
         alpha: Normalization factor for tanh.
@@ -35,13 +65,7 @@ def _material_feature(
     batch = x.shape[0]
 
     if material_diff is None:
-        # Channels: 0-4 meta, 5 en-passant, 6-11 ours, 12-17 theirs, 18-19 heatmaps.
-        our_pieces = x[:, 6:12]
-        enemy_pieces = x[:, 12:18]
-        weights = material_weights.to(dtype=x.dtype, device=x.device).view(1, 6, 1, 1)
-        our_score = (our_pieces * weights).sum(dim=(1, 2, 3))
-        enemy_score = (enemy_pieces * weights).sum(dim=(1, 2, 3))
-        diff = our_score - enemy_score
+        diff = _material_diff_from_board(x, material_weights)
     else:
         diff = material_diff.to(device=x.device, dtype=x.dtype).reshape(batch)
 
@@ -218,6 +242,9 @@ class ValueHead(torch.nn.Module):
     def forward(
         self, x: torch.Tensor, material_diff: torch.Tensor | None = None
     ) -> torch.Tensor:
+        if material_diff is None:
+            raise ValueError("ValueHead requires explicit material_diff")
+
         material_feature = _material_feature(
             x=x,
             material_weights=self.material_weights,
@@ -270,6 +297,11 @@ class ModelFull(torch.nn.Module):
     def forward(
         self, x: torch.Tensor, material_diff: torch.Tensor | None = None
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        if material_diff is None:
+            material_diff = _material_diff_from_board(
+                x, self.value_head.material_weights
+            )
+
         out = self.add_coords(x)
         out = self.initial_block(out)
         out = self.blocks(out)
@@ -282,6 +314,11 @@ class ModelFull(torch.nn.Module):
     def forward_value(
         self, x: torch.Tensor, material_diff: torch.Tensor | None = None
     ) -> torch.Tensor:
+        if material_diff is None:
+            material_diff = _material_diff_from_board(
+                x, self.value_head.material_weights
+            )
+
         out = self.add_coords(x)
         out = self.initial_block(out)
         out = self.blocks(out)
@@ -316,6 +353,11 @@ class ValueOnlyModel(torch.nn.Module):
     def forward(
         self, x: torch.Tensor, material_diff: torch.Tensor | None = None
     ) -> torch.Tensor:
+        if material_diff is None:
+            material_diff = _material_diff_from_board(
+                x, self.value_head.material_weights
+            )
+
         out = self.add_coords(x)
         out = self.initial_block(out)
         out = self.blocks(out)
