@@ -2,7 +2,7 @@
 Unified CLI for Chess Position Evaluator.
 
 Usage:
-    cpe train <experiment-name> --epochs N --steps N --batch N --lr F --wd F --patience N --factor F [--resume]
+    cpe train <experiment-name> --epochs N --steps N --batch N --lr F --wd F [--resume]
     cpe analyze-rank <model-name>
     cpe eval <model-name>
     cpe battle <model-name>
@@ -85,10 +85,12 @@ def train(
         print("Error: WANDB_API_KEY env var is required")
         raise typer.Exit(1)
 
+    from libs.paths import checkpoint_path
+
     # Check checkpoint exists
-    checkpoint_path = f"models/checkpoints/{experiment_name}.pth"
-    if os.path.exists(checkpoint_path) and not resume:
-        print(f"Error: {checkpoint_path} already exists")
+    model_checkpoint_path = checkpoint_path(experiment_name)
+    if model_checkpoint_path.exists() and not resume:
+        print(f"Error: {model_checkpoint_path} already exists")
         print("Use --resume to continue training")
         raise typer.Exit(1)
 

@@ -13,7 +13,7 @@ class BattleCheckpointConfigTest(unittest.TestCase):
     def test_explicit_model_name_resolves_under_checkpoints_dir(self):
         self.assertEqual(
             entry_module.resolve_checkpoint_path("explicit-model"),
-            Path("models/checkpoints/explicit-model.pth"),
+            Path("artifacts/checkpoints/explicit-model.pth"),
         )
 
     def test_model_name_is_required(self):

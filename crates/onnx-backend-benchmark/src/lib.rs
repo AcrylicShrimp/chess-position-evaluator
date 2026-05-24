@@ -7,7 +7,7 @@ use ort::{
 use std::path::Path;
 
 /// Default model path for benchmarks.
-pub const DEFAULT_MODEL_PATH: &str = "models/onnx/ghost-ca-r4-256ch-6blk-best.onnx";
+pub const DEFAULT_MODEL_PATH: &str = "artifacts/onnx/ghost-ca-r4-256ch-6blk-best.onnx";
 
 /// Input tensor shape constants.
 pub const CHANNELS: usize = 20;

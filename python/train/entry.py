@@ -2,6 +2,7 @@ import torch
 
 from libs.dataset import ChessEvaluationDataset
 from libs.model import ValueOnlyModel
+from libs.paths import TRAIN_DATA_PATH, VALIDATION_DATA_PATH, checkpoint_path
 from train.trainer import Trainer
 
 
@@ -31,10 +32,10 @@ def run_training(
     print("=== Train Evaluation ===")
     print(f"[✓] Using torch version: {torch.__version__}")
 
-    train_data_path = "train.chesseval"
-    validation_data_path = "validation.chesseval"
-    checkpoint_path = f"models/checkpoints/{experiment_name}.pth"
-    best_checkpoint_path = f"models/checkpoints/{experiment_name}-best.pth"
+    train_data_path = TRAIN_DATA_PATH
+    validation_data_path = VALIDATION_DATA_PATH
+    model_checkpoint_path = checkpoint_path(experiment_name)
+    best_checkpoint_path = checkpoint_path(f"{experiment_name}-best")
 
     if torch.cuda.is_available():
         device = torch.device("cuda")
@@ -75,9 +76,9 @@ def run_training(
     )
 
     if resume:
-        trainer.load_checkpoint(checkpoint_path)
+        trainer.load_checkpoint(model_checkpoint_path)
 
-    train_data = ChessEvaluationDataset(train_data_path)
+    train_data = ChessEvaluationDataset(str(train_data_path))
     train_data_loader = torch.utils.data.DataLoader(
         train_data,
         batch_size=batch_size,
@@ -88,7 +89,7 @@ def run_training(
         worker_init_fn=worker_init_fn if train_workers > 0 else None,
     )
 
-    validation_data = ChessEvaluationDataset(validation_data_path)
+    validation_data = ChessEvaluationDataset(str(validation_data_path))
     validation_data_loader = torch.utils.data.DataLoader(
         validation_data,
         batch_size=batch_size,
@@ -103,7 +104,7 @@ def run_training(
     print(f"[✓] Data loaded from {validation_data_path} ({len(validation_data)} rows)")
 
     trainer.train(
-        checkpoint_path=checkpoint_path,
+        checkpoint_path=model_checkpoint_path,
         best_checkpoint_path=best_checkpoint_path,
         train_data_loader=train_data_loader,
         validation_data_loader=validation_data_loader,

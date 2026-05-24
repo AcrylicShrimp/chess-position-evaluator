@@ -3,15 +3,18 @@ mod write_chesseval;
 use crate::write_chesseval::centipawn_to_win_prob;
 use duckdb::{Connection, params};
 
-const DUCKDB_TEMP_PATH: &str = "lichess_db_eval.duckdb.tmp";
-const CHESS_EVALUATION_DB_PATH: &str = "lichess_db_eval.jsonl";
-const TRAIN_CHESSEVAL_PATH: &str = "train.chesseval";
-const VALIDATION_CHESSEVAL_PATH: &str = "validation.chesseval";
+const DUCKDB_TEMP_PATH: &str = "data/interim/lichess_db_eval.duckdb.tmp";
+const CHESS_EVALUATION_DB_PATH: &str = "data/raw/lichess_db_eval.jsonl";
+const TRAIN_CHESSEVAL_PATH: &str = "data/processed/train.chesseval";
+const VALIDATION_CHESSEVAL_PATH: &str = "data/processed/validation.chesseval";
 const DATASET_RATIO: f64 = 1.0;
 const VALIDATION_SET_RATIO: f64 = 0.1;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+    tokio::fs::create_dir_all("data/interim").await?;
+    tokio::fs::create_dir_all("data/processed").await?;
+
     if tokio::fs::try_exists(TRAIN_CHESSEVAL_PATH).await? {
         println!("{TRAIN_CHESSEVAL_PATH} already exists; removing...");
         tokio::fs::remove_file(TRAIN_CHESSEVAL_PATH).await?;

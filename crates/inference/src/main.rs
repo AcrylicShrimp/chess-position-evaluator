@@ -8,7 +8,7 @@ fn main() -> Result<()> {
     let model_path = if args.len() > 1 {
         args[1].clone()
     } else {
-        "models/onnx/ghost-ca-r4-256ch-6blk-best.onnx".to_string()
+        "artifacts/onnx/ghost-ca-r4-256ch-6blk-best.onnx".to_string()
     };
 
     println!("Loading model from: {}", model_path);

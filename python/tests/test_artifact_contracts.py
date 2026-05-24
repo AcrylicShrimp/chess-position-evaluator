@@ -1,42 +1,56 @@
+import importlib
 import sys
 import unittest
 from pathlib import Path
 
-import onnx
-
 PYTHON_ROOT = Path(__file__).resolve().parents[1]
-REPO_ROOT = PYTHON_ROOT.parent
 sys.path.insert(0, str(PYTHON_ROOT))
 
+from libs import paths
 
-def onnx_input_shape(path: Path) -> list[int | str | None]:
-    model = onnx.load(path, load_external_data=False)
-    graph_input = model.graph.input[0]
-    dims = graph_input.type.tensor_type.shape.dim
-
-    shape: list[int | str | None] = []
-    for dim in dims:
-        if dim.dim_value:
-            shape.append(dim.dim_value)
-        elif dim.dim_param:
-            shape.append(dim.dim_param)
-        else:
-            shape.append(None)
-    return shape
+analyze_rank = importlib.import_module("analyze_rank")
+battle_entry = importlib.import_module("battle.entry")
+eval_module = importlib.import_module("eval")
+export_onnx = importlib.import_module("export_onnx")
 
 
 class ArtifactContractTest(unittest.TestCase):
-    def test_at_least_one_committed_onnx_artifact_uses_current_input_shape(self):
-        onnx_paths = sorted((REPO_ROOT / "models/onnx").glob("*.onnx"))
-        self.assertTrue(onnx_paths, "No committed ONNX artifacts found")
+    def test_runtime_directory_contracts_are_canonical(self):
+        self.assertEqual(
+            paths.RAW_EVALUATIONS_PATH,
+            Path("data/raw/lichess_db_eval.jsonl"),
+        )
+        self.assertEqual(
+            paths.DUCKDB_TEMP_PATH,
+            Path("data/interim/lichess_db_eval.duckdb.tmp"),
+        )
+        self.assertEqual(
+            paths.TRAIN_DATA_PATH,
+            Path("data/processed/train.chesseval"),
+        )
+        self.assertEqual(
+            paths.VALIDATION_DATA_PATH,
+            Path("data/processed/validation.chesseval"),
+        )
+        self.assertEqual(
+            paths.checkpoint_path("experiment"),
+            Path("artifacts/checkpoints/experiment.pth"),
+        )
+        self.assertEqual(
+            paths.onnx_path("experiment"),
+            Path("artifacts/onnx/experiment.onnx"),
+        )
 
-        compatible_paths = [
-            path for path in onnx_paths if onnx_input_shape(path)[1:] == [20, 8, 8]
-        ]
-
-        self.assertTrue(
-            compatible_paths,
-            "No committed ONNX artifacts declare input shape [batch, 20, 8, 8]",
+    def test_python_entrypoints_use_canonical_runtime_paths(self):
+        self.assertEqual(
+            battle_entry.resolve_checkpoint_path("explicit-model"),
+            paths.checkpoint_path("explicit-model"),
+        )
+        self.assertEqual(analyze_rank.DATASET_PATH, paths.VALIDATION_DATA_PATH)
+        self.assertEqual(export_onnx.ONNX_DIR, paths.ONNX_DIR)
+        self.assertEqual(
+            eval_module.checkpoint_path("explicit-model"),
+            paths.checkpoint_path("explicit-model"),
         )
 
 

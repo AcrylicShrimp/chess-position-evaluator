@@ -1,6 +1,7 @@
 import itertools
 import os
 import signal
+from pathlib import Path
 
 import torch
 import wandb
@@ -102,6 +103,7 @@ class Trainer:
         print(f"[✓] Loaded checkpoint from {checkpoint_path}")
 
     def save_checkpoint(self, checkpoint_path: str, epoch: int):
+        Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
         torch.save(
             {
                 "model": self.model.state_dict(),

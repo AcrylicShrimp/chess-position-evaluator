@@ -47,7 +47,7 @@ Model names are passed without the `.pth` extension. For example,
 `<model-name>` resolves to:
 
 ```text
-models/checkpoints/<model-name>.pth
+artifacts/checkpoints/<model-name>.pth
 ```
 
 Evaluate FEN positions interactively:
@@ -74,39 +74,39 @@ Analyze activation rank:
 uv run cpe analyze-rank <model-name>
 ```
 
-`analyze-rank` requires `validation.chesseval` in the repository root.
+`analyze-rank` requires `data/processed/validation.chesseval`.
 
 ## Data Preparation
 
 Training data comes from the
 [Lichess Evaluation Database](https://database.lichess.org/#evals).
 
-Download the JSONL Zstandard archive and place or move it to the repository
-root. The preprocessing code expects the decompressed file at:
+Download the JSONL Zstandard archive and place or move it under `data/raw`.
+The preprocessing code expects the decompressed file at:
 
 ```text
-lichess_db_eval.jsonl
+data/raw/lichess_db_eval.jsonl
 ```
 
 Example:
 
 ```bash
-mv crates/preprocess/lichess_db_eval.jsonl.zst ./lichess_db_eval.jsonl.zst
-unzstd lichess_db_eval.jsonl.zst
+mv <download-dir>/lichess_db_eval.jsonl.zst data/raw/lichess_db_eval.jsonl.zst
+unzstd data/raw/lichess_db_eval.jsonl.zst
 cargo run -p preprocess
 ```
 
 The preprocessing command runs from the repository root and writes:
 
 ```text
-train.chesseval
-validation.chesseval
-lichess_db_eval.duckdb.tmp
+data/processed/train.chesseval
+data/processed/validation.chesseval
+data/interim/lichess_db_eval.duckdb.tmp
 ```
 
 The generated dataset and source JSONL files are intentionally ignored by Git.
 If you need to rebuild the DuckDB staging table from a new JSONL file, remove
-`lichess_db_eval.duckdb.tmp` first.
+`data/interim/lichess_db_eval.duckdb.tmp` first.
 
 ## Training
 
@@ -144,8 +144,8 @@ uv run cpe train --help
 Checkpoints are written to:
 
 ```text
-models/checkpoints/<experiment-name>.pth
-models/checkpoints/<experiment-name>-best.pth
+artifacts/checkpoints/<experiment-name>.pth
+artifacts/checkpoints/<experiment-name>-best.pth
 ```
 
 By default, best checkpoints are also uploaded to WandB artifacts. Disable that
@@ -220,7 +220,11 @@ chess-position-evaluator/
 │   ├── inference/              # ONNX Runtime inference experiment
 │   ├── onnx-backend-benchmark/ # Rust ONNX benchmark
 │   └── tree-search/            # Rust tree-search experiments
-├── models/
+├── data/                       # Ignored runtime data directories
+│   ├── raw/
+│   ├── interim/
+│   └── processed/
+├── artifacts/                  # Ignored runtime model artifacts
 │   ├── checkpoints/
 │   └── onnx/
 ├── docs/todos/
@@ -251,9 +255,9 @@ cargo run -p preprocess
 cargo run -p inference
 ```
 
-`cargo run -p preprocess` requires `lichess_db_eval.jsonl` in the repository
-root. `cargo run -p inference` uses the configured ONNX artifact under
-`models/onnx`.
+`cargo run -p preprocess` requires `data/raw/lichess_db_eval.jsonl`.
+`cargo run -p inference` uses the configured ONNX artifact under
+`artifacts/onnx`.
 
 ## Notes
 
@@ -261,6 +265,8 @@ root. `cargo run -p inference` uses the configured ONNX artifact under
   shapes and should be treated as historical unless re-verified.
 - Dataset files, local WandB output, checkpoints, and downloaded compressed data
   are ignored by Git.
+- See `data/README.md` and `artifacts/README.md` for the local runtime
+  directory contracts.
 
 ## License
 

@@ -6,10 +6,9 @@ Usage:
 
 Example:
     cpe export-onnx model-best
-        models/checkpoints/model-best.pth -> models/onnx/model-best.onnx
+        artifacts/checkpoints/model-best.pth -> artifacts/onnx/model-best.onnx
 """
 
-import os
 import sys
 
 import numpy as np
@@ -18,10 +17,9 @@ import onnxruntime as ort
 import torch
 
 from libs.model import ValueOnlyModel
+from libs.paths import ONNX_DIR, checkpoint_path, onnx_path
 
 
-CHECKPOINTS_DIR = "models/checkpoints"
-ONNX_DIR = "models/onnx"
 OPSET_VERSION = 20
 EXAMPLE_BATCH_SIZE = 4
 OUTPUT_ATOL = 1e-3
@@ -29,23 +27,23 @@ OUTPUT_ATOL = 1e-3
 
 def run_export_onnx(model_name: str):
     """Export the given model to ONNX format."""
-    input_path = os.path.join(CHECKPOINTS_DIR, f"{model_name}.pth")
-    output_path = os.path.join(ONNX_DIR, f"{model_name}.onnx")
+    input_path = checkpoint_path(model_name)
+    output_path = onnx_path(model_name)
 
     # Check input exists
-    if not os.path.exists(input_path):
+    if not input_path.exists():
         print(f"Error: {input_path} not found")
         sys.exit(1)
 
     # Check output exists - prompt to overwrite
-    if os.path.exists(output_path):
+    if output_path.exists():
         response = input(f"{output_path} already exists. Overwrite? [y/N] ")
         if response.lower() != "y":
             print("Aborted.")
             sys.exit(0)
 
     # Create output directory if needed
-    os.makedirs(ONNX_DIR, exist_ok=True)
+    ONNX_DIR.mkdir(parents=True, exist_ok=True)
 
     # Load model
     print(f"[1/4] Loading model from {input_path}")
@@ -84,7 +82,7 @@ def run_export_onnx(model_name: str):
     with torch.no_grad():
         torch_output = model(test_input).numpy()
 
-    session = ort.InferenceSession(output_path)
+    session = ort.InferenceSession(str(output_path))
     ort_output = session.run(None, {"board": test_input.numpy()})[0]
 
     max_diff = np.max(np.abs(torch_output - ort_output))

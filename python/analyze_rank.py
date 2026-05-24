@@ -18,10 +18,10 @@ from torch.utils.data import DataLoader
 
 from libs.dataset import ChessEvaluationDataset
 from libs.model import ValueOnlyModel
+from libs.paths import VALIDATION_DATA_PATH, checkpoint_path
 
 
-CHECKPOINTS_DIR = Path("models/checkpoints")
-DATASET_PATH = Path("validation.chesseval")
+DATASET_PATH = VALIDATION_DATA_PATH
 NUM_SAMPLES = 2000
 BATCH_SIZE = 256
 RANK_THRESHOLD = 0.01  # 1% of max singular value
@@ -29,7 +29,7 @@ RANK_THRESHOLD = 0.01  # 1% of max singular value
 
 def run_analyze_rank(model_name: str):
     """Analyze activation rank for the given model."""
-    model_path = CHECKPOINTS_DIR / f"{model_name}.pth"
+    model_path = checkpoint_path(model_name)
 
     try:
         validate_input_paths(model_path, DATASET_PATH)

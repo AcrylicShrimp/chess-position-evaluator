@@ -1,13 +1,9 @@
-import os
-
 import chess
 import torch
 
 from libs.encoding import board2tensor
 from libs.model import ValueOnlyModel
-
-
-CHECKPOINTS_DIR = "models/checkpoints"
+from libs.paths import checkpoint_path
 
 
 def run_eval(model_name: str):
@@ -23,19 +19,19 @@ def run_eval(model_name: str):
 
     print(f"[✓] Using device: {device}")
 
-    checkpoint_path = os.path.join(CHECKPOINTS_DIR, f"{model_name}.pth")
+    model_path = checkpoint_path(model_name)
 
-    if not os.path.exists(checkpoint_path):
-        print(f"Error: {checkpoint_path} not found")
+    if not model_path.exists():
+        print(f"Error: {model_path} not found")
         return
 
     model = ValueOnlyModel()
     model.to(device)
 
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(model_path, map_location=device)
     model.load_state_dict(checkpoint["model"])
     model.eval()
-    print(f"[✓] Model loaded from {checkpoint_path}")
+    print(f"[✓] Model loaded from {model_path}")
 
     if "best_validation_loss" in checkpoint:
         best_validation_loss = checkpoint["best_validation_loss"]

@@ -1,4 +1,4 @@
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use onnx_backend_benchmark::{create_session, generate_random_input, run_inference};
 use std::path::PathBuf;
 
@@ -7,8 +7,7 @@ fn get_model_path() -> PathBuf {
     // CARGO_MANIFEST_DIR points to crates/onnx-backend-benchmark
     // Go up two levels to reach workspace root
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    PathBuf::from(manifest_dir)
-        .join("../../models/onnx/ghost-ca-r4-256ch-6blk-best.onnx")
+    PathBuf::from(manifest_dir).join("../../artifacts/onnx/ghost-ca-r4-256ch-6blk-best.onnx")
 }
 
 /// Benchmark latency for different batch sizes.
@@ -30,9 +29,7 @@ fn bench_latency(c: &mut Criterion) {
             BenchmarkId::from_parameter(batch_size),
             &input,
             |b, input| {
-                b.iter(|| {
-                    run_inference(&mut session, input).expect("Inference failed")
-                });
+                b.iter(|| run_inference(&mut session, input).expect("Inference failed"));
             },
         );
     }
@@ -58,9 +55,7 @@ fn bench_throughput(c: &mut Criterion) {
             BenchmarkId::from_parameter(batch_size),
             &input,
             |b, input| {
-                b.iter(|| {
-                    run_inference(&mut session, input).expect("Inference failed")
-                });
+                b.iter(|| run_inference(&mut session, input).expect("Inference failed"));
             },
         );
     }

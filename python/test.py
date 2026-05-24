@@ -1,8 +1,10 @@
 import duckdb
 
+from libs.paths import DUCKDB_TEMP_PATH
+
 
 def main():
-    conn = duckdb.connect("preprocess/lichess_db_eval.duckdb.tmp", True)
+    conn = duckdb.connect(str(DUCKDB_TEMP_PATH), True)
     total_count = conn.execute("SELECT COUNT(*) FROM rows").fetchone()[0]
 
     clipped_count = conn.execute(

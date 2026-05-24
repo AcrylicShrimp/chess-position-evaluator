@@ -6,18 +6,16 @@ import chess
 import torch
 
 from libs.model import ValueOnlyModel
+from libs.paths import checkpoint_path
 from libs.scoring import board2score
 
 from battle.negamax import find_best_move
 
 
-CHECKPOINTS_DIR = Path("models/checkpoints")
-
-
 def resolve_checkpoint_path(model_name: str) -> Path:
     if not model_name:
         raise ValueError("model_name is required")
-    return CHECKPOINTS_DIR / f"{model_name}.pth"
+    return checkpoint_path(model_name)
 
 
 def make_ai_move(
