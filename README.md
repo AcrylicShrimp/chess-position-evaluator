@@ -1,202 +1,266 @@
 # Chess Position Evaluator
 
-A neural network-based chess position evaluator with a complete end-to-end training pipeline. This project demonstrates building a compact yet powerful chess engine from raw data to a playable AI.
+A neural network chess position evaluator with Python training/evaluation tools,
+Rust preprocessing, ONNX export, and experimental Rust inference support.
 
-## Motivation
-
-This project was built to:
-
-- Create a **strong but efficient** chess engine with a small model footprint (~27MB)
-- Experience and learn the **entire deep learning pipeline** from data preprocessing to deployment
-- Achieve strong playing strength even with minimal search (depth 4, branch factor 10, negamax)
+The current Python model evaluates a board from the side-to-move perspective.
+Interactive tools convert that output into White and Black win probabilities for
+display.
 
 ## Features
 
-- **Neural Network Evaluation**: CNN with residual blocks and squeeze-excitation for position scoring
-- **Complete Training Pipeline**: From raw Lichess data to trained model
-- **High-Performance Preprocessing**: Rust-based data pipeline for efficient processing
-- **Training Infrastructure**: Mixed precision training, checkpointing, TensorBoard logging
-- **Interactive Modes**: Position evaluation REPL and play-against-AI mode
-- **Multi-Device Support**: CUDA, Apple Silicon (MPS), and CPU
+- Python CLI for training, FEN evaluation, play-against-AI, ONNX export, and
+  activation-rank analysis.
+- Rust preprocessing pipeline for converting the Lichess evaluation database
+  into compact `.chesseval` datasets.
+- Value-only CNN model with coordinate channels, Ghost shuffle blocks,
+  coordinate attention, and an explicit board-material feature.
+- WandB logging and optional checkpoint artifact uploads during training.
+- Python and Rust inference paths for local experimentation.
 
-## Model Architecture
+## Requirements
 
-The model uses a compact CNN architecture inspired by AlphaZero:
+- Python 3.12 or newer.
+- `uv` for Python dependency and virtual environment management.
+- Rust toolchain for preprocessing and Rust inference experiments.
+- CUDA GPU recommended for training; CPU and Apple Silicon/MPS paths are
+  supported where PyTorch supports them.
 
-```
-Input (18 channels × 8 × 8)
-    ↓
-Initial Conv Block (128 filters)
-    ↓
-6× Residual Blocks with Squeeze-Excitation
-    ↓
-Value Head → Win Probability (0-1)
-```
-
-**Input Representation** (18 channels):
-
-- Side to move indicator
-- Castling rights (4 channels: our/their kingside/queenside)
-- En passant square
-- Piece positions (12 channels: 6 piece types × 2 colors)
-
-**Output**: Win probability from the current player's perspective
-
-<details>
-<summary>Architecture Details</summary>
-
-- **Residual Block**: Conv3×3 → BN → ReLU → Conv3×3 → BN → SE → Skip Connection → ReLU
-- **Squeeze-Excitation**: Global average pooling → FC(128→16) → ReLU → FC(16→128) → Sigmoid → Scale
-- **Value Head**: Conv1×1(32) → BN → ReLU → Flatten → FC(2048→256) → ReLU → FC(256→1)
-
-</details>
-
-## Dataset
-
-Training data comes from the [Lichess Evaluation Database](https://database.lichess.org/#evals), which contains millions of positions evaluated by Stockfish.
-
-**Preprocessing pipeline**:
-
-1. Filter evaluations with depth ≥ 24 (high-quality analysis)
-2. Balance dataset: include all "nuanced" positions (cp between -150 and 150), sample equal amounts of decisive positions
-3. Convert centipawns to win probability: `win_prob = 1 / (1 + 10^(-cp/400))`
-4. Output to custom binary format (`.chesseval`) for fast loading
-
-## Getting Started
-
-### Prerequisites
-
-- Python ≥ 3.12
-- CUDA GPU (recommended), Apple Silicon, or CPU
-- Rust toolchain (for preprocessing only)
-
-### Installation
+## Setup
 
 ```bash
-# Clone the repository
 git clone https://github.com/AcrylicShrimp/chess-position-evaluator.git
 cd chess-position-evaluator
-
-# Sync dependencies into the project-managed virtual environment
 uv sync
 ```
 
-The project uses uv-managed environments. You do not need to activate the
-virtual environment manually for normal commands; run them through `uv run`.
-
-### Quick Start
-
-**Show available commands:**
+The project uses a uv-managed virtual environment. You normally do not need to
+activate it manually; use `uv run ...`.
 
 ```bash
 uv run cpe --help
 ```
 
-**Evaluate a position:**
+## CLI Usage
+
+Model names are passed without the `.pth` extension. For example,
+`<model-name>` resolves to:
+
+```text
+models/checkpoints/<model-name>.pth
+```
+
+Evaluate FEN positions interactively:
 
 ```bash
 uv run cpe eval <model-name>
-# Enter FEN strings to get win probability assessments
 ```
 
-**Play against the AI:**
+Play against the AI:
 
 ```bash
 uv run cpe battle <model-name>
-# You'll be assigned a random color and can play using algebraic notation (e.g., e4, Nf3)
 ```
 
-## Training from Scratch
-
-### 1. Download Data
-
-Download the Lichess evaluation database from [https://database.lichess.org/#evals](https://database.lichess.org/#evals).
-
-Extract the JSONL file and place it as `lichess_db_eval.jsonl` in the `preprocess/` directory.
-
-### 2. Preprocess Data
+Export a checkpoint to ONNX:
 
 ```bash
-cd preprocess
-cargo build --release
-./target/release/preprocess
+uv run cpe export-onnx <model-name>
 ```
 
-This will generate:
-
-- `train.chesseval` - Training set (~90% of data)
-- `validation.chesseval` - Validation set (~10% of data)
-
-Move these files to the project root directory.
-
-### 3. Train the Model
+Analyze activation rank:
 
 ```bash
-python src/train_eval.py
+uv run cpe analyze-rank <model-name>
 ```
 
-Training configuration:
+`analyze-rank` requires `validation.chesseval` in the repository root.
 
-- Batch size: 8,192
-- Optimizer: AdamW (lr=1e-3, weight_decay=1e-4)
-- Scheduler: ReduceLROnPlateau
-- Mixed precision: bfloat16 on CUDA
+## Data Preparation
 
-Checkpoints are saved to:
+Training data comes from the
+[Lichess Evaluation Database](https://database.lichess.org/#evals).
 
-- `model.pth` - Latest checkpoint
-- `model-best.pth` - Best validation loss
+Download the JSONL Zstandard archive and place or move it to the repository
+root. The preprocessing code expects the decompressed file at:
 
-### 4. Monitor Training
+```text
+lichess_db_eval.jsonl
+```
+
+Example:
 
 ```bash
-tensorboard --logdir tensorboard/
+mv crates/preprocess/lichess_db_eval.jsonl.zst ./lichess_db_eval.jsonl.zst
+unzstd lichess_db_eval.jsonl.zst
+cargo run -p preprocess
 ```
 
-## Benchmarks
+The preprocessing command runs from the repository root and writes:
 
-_Coming soon: Performance benchmarks against various opponents_
+```text
+train.chesseval
+validation.chesseval
+lichess_db_eval.duckdb.tmp
+```
 
-| Opponent                | Win Rate | Notes |
-| ----------------------- | -------- | ----- |
-| Random Agent            | TBD      |       |
-| Stockfish (depth 1)     | TBD      |       |
-| Stockfish (ELO limited) | TBD      |       |
+The generated dataset and source JSONL files are intentionally ignored by Git.
+If you need to rebuild the DuckDB staging table from a new JSONL file, remove
+`lichess_db_eval.duckdb.tmp` first.
+
+## Training
+
+Training requires WandB configuration. You can create a local `.env` from
+`.env.example`:
+
+```bash
+cp .env.example .env
+```
+
+Set at least:
+
+```text
+WANDB_API_KEY=...
+WANDB_PROJECT=chess-position-evaluator
+```
+
+Run training with explicit hyperparameters:
+
+```bash
+uv run cpe train my-experiment \
+  --epochs 10 \
+  --steps 1000 \
+  --batch 256 \
+  --lr 0.001 \
+  --wd 0.0001
+```
+
+Useful options:
+
+```bash
+uv run cpe train --help
+```
+
+Checkpoints are written to:
+
+```text
+models/checkpoints/<experiment-name>.pth
+models/checkpoints/<experiment-name>-best.pth
+```
+
+By default, best checkpoints are also uploaded to WandB artifacts. Disable that
+with:
+
+```bash
+uv run cpe train my-experiment ... --no-upload-checkpoints
+```
+
+Resume an existing local checkpoint with:
+
+```bash
+uv run cpe train my-experiment ... --resume
+```
+
+## Model Architecture
+
+The current value model is `ValueOnlyModel` in `python/libs/model.py`.
+
+```text
+Input board tensor
+  -> Coordinate channels
+  -> Convolutional trunk
+  -> Ghost shuffle blocks with coordinate attention
+  -> ValueHead:
+       - 1x1 conv path over trunk activations
+       - explicit material feature from the original board tensor
+       - MLP output logit
+```
+
+Input channels:
+
+- 5 metadata planes: side-to-move color and castling rights.
+- 1 legal en-passant plane.
+- 12 piece bitboard planes: our pieces then their pieces, ordered by
+  pawn/knight/bishop/rook/queen/king.
+- 2 attack-count heatmaps: our attacks and their attacks.
+
+The board is encoded from the side-to-move perspective. For Black to move,
+bitboards and heatmaps are vertically flipped so the model sees a consistent
+orientation.
+
+The model output is a raw logit for side-to-move win probability. Consumers apply
+`sigmoid`; user-facing evaluation converts that side-to-move probability into
+White and Black probabilities.
 
 ## Project Structure
 
-```
+```text
 chess-position-evaluator/
-├── src/
-│   ├── libs/              # Core library modules
-│   │   ├── model.py       # Neural network architecture
-│   │   ├── encoding.py    # Board → tensor conversion
-│   │   ├── dataset.py     # Data loading
-│   │   ├── scoring.py     # Position evaluation
-│   │   └── movement.py    # Move encoding (for future policy head)
-│   ├── battle/            # Game-playing components
-│   │   ├── negamax.py     # Search algorithm
-│   │   └── compute_ordered_moves.py  # Move ordering
-│   ├── train_eval/        # Training pipeline
-│   │   └── trainer.py     # Trainer class
-│   ├── train_eval.py      # Training entry point
-│   ├── eval.py            # Interactive evaluation
-│   └── battle.py          # Play against AI
-├── preprocess/            # Rust data preprocessing
-│   ├── src/
-│   │   ├── main.rs        # Pipeline orchestration
-│   │   └── write_chesseval.rs  # Binary format writer
-│   └── Cargo.toml
-├── requirements.txt
-└── README.md
+├── python/
+│   ├── cli.py                  # Typer CLI entrypoint
+│   ├── eval.py                 # Interactive FEN evaluation
+│   ├── export_onnx.py          # Checkpoint -> ONNX export
+│   ├── analyze_rank.py         # Activation-rank analysis
+│   ├── libs/
+│   │   ├── model.py            # Model architecture
+│   │   ├── encoding.py         # Board -> tensor conversion
+│   │   ├── dataset.py          # .chesseval dataset reader
+│   │   ├── scoring.py          # Model scoring helpers
+│   │   └── movement.py         # Move encoding constants
+│   ├── train/
+│   │   ├── entry.py            # Training orchestration
+│   │   └── trainer.py          # Training loop and WandB logging
+│   ├── battle/
+│   │   ├── entry.py            # Play-against-AI entrypoint
+│   │   ├── negamax.py          # Search
+│   │   └── compute_ordered_moves.py
+│   └── tests/
+├── crates/
+│   ├── preprocess/             # Lichess JSONL -> .chesseval
+│   ├── inference/              # ONNX Runtime inference experiment
+│   ├── onnx-backend-benchmark/ # Rust ONNX benchmark
+│   └── tree-search/            # Rust tree-search experiments
+├── models/
+│   ├── checkpoints/
+│   └── onnx/
+├── docs/todos/
+├── pyproject.toml
+├── uv.lock
+├── Cargo.toml
+└── Cargo.lock
 ```
 
-## Roadmap
+## Verification
 
-- [ ] Add policy head for move prediction
-- [ ] Implement MCTS for stronger play
-- [ ] Add formal benchmark suite
-- [ ] Optimize search with transposition tables
+Run Python tests:
+
+```bash
+uv run python -m unittest discover -s python/tests -v
+```
+
+Run a Python compile smoke check:
+
+```bash
+uv run python -m compileall -q python
+```
+
+Run Rust preprocessing or inference checks:
+
+```bash
+cargo run -p preprocess
+cargo run -p inference
+```
+
+`cargo run -p preprocess` requires `lichess_db_eval.jsonl` in the repository
+root. `cargo run -p inference` uses the configured ONNX artifact under
+`models/onnx`.
+
+## Notes
+
+- Older checkpoint and ONNX artifacts may use earlier architectures or input
+  shapes and should be treated as historical unless re-verified.
+- Dataset files, local WandB output, checkpoints, and downloaded compressed data
+  are ignored by Git.
 
 ## License
 
@@ -204,6 +268,5 @@ This project is licensed under the MIT License.
 
 ## Acknowledgments
 
-- [Lichess](https://lichess.org/) for the open evaluation database
-- [python-chess](https://python-chess.readthedocs.io/) for chess logic
-- AlphaZero paper for architectural inspiration
+- [Lichess](https://lichess.org/) for the open evaluation database.
+- [python-chess](https://python-chess.readthedocs.io/) for chess logic.
