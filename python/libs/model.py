@@ -3,12 +3,15 @@ import torch
 from libs.movement import TOTAL_MOVES
 
 # Order matches chess.PIECE_TYPES (pawn, knight, bishop, rook, queen, king)
-_MATERIAL_VALUES = torch.tensor([1.0, 3.0, 3.0, 5.0, 9.0, 0.0], dtype=torch.float32)
+_MATERIAL_VALUES = torch.tensor(
+    [1.0, 3.0, 3.0, 5.0, 9.0, 0.0], dtype=torch.float32)
 _MATERIAL_ALPHA = 5.0
 
 
 CHANNELS = 256
 BLOCKS = 6
+ATTENTION_AFTER_BLOCK = 3
+ATTENTION_DIM = 64
 
 
 def _material_diff_from_board(
@@ -84,7 +87,8 @@ class AddCoords(torch.nn.Module):
             - 1.0
         )
         x_coords = (
-            2.0 * torch.arange(width).unsqueeze(0).expand(height, width) / (width - 1.0)
+            2.0 * torch.arange(width).unsqueeze(0).expand(height,
+                                                          width) / (width - 1.0)
             - 1.0
         )
 
@@ -111,11 +115,14 @@ class CoordinateAttention(torch.nn.Module):
     def __init__(self, channels: int, reduction: int):
         super().__init__()
         reduced = max(8, channels // reduction)
-        self.reduce = torch.nn.Conv2d(channels, reduced, kernel_size=1, bias=True)
+        self.reduce = torch.nn.Conv2d(
+            channels, reduced, kernel_size=1, bias=True)
         self.bn = torch.nn.BatchNorm2d(reduced)
         self.act = torch.nn.Hardswish(inplace=True)
-        self.attn_h = torch.nn.Conv2d(reduced, channels, kernel_size=1, bias=True)
-        self.attn_w = torch.nn.Conv2d(reduced, channels, kernel_size=1, bias=True)
+        self.attn_h = torch.nn.Conv2d(
+            reduced, channels, kernel_size=1, bias=True)
+        self.attn_w = torch.nn.Conv2d(
+            reduced, channels, kernel_size=1, bias=True)
         self.sigmoid = torch.nn.Sigmoid()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -138,6 +145,47 @@ class CoordinateAttention(torch.nn.Module):
         return x * a_h * a_w
 
 
+class NaiveBoardSelfAttention(torch.nn.Module):
+    def __init__(self, channels: int, attn_dim: int):
+        super().__init__()
+        self.channels = channels
+        self.attn_dim = attn_dim
+        self.scale = attn_dim**-0.5
+
+        self.q_proj = torch.nn.Conv2d(
+            channels, attn_dim, kernel_size=1, bias=False
+        )
+        self.k_proj = torch.nn.Conv2d(
+            channels, attn_dim, kernel_size=1, bias=False
+        )
+        self.v_proj = torch.nn.Conv2d(
+            channels, attn_dim, kernel_size=1, bias=False
+        )
+        self.out_proj = torch.nn.Conv2d(
+            attn_dim, channels, kernel_size=1, bias=False
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if not torch.jit.is_tracing() and (x.dim() != 4 or x.shape[1] != self.channels):
+            raise ValueError(
+                f"board attention requires [B, {self.channels}, H, W] input"
+            )
+
+        batch, _channels, height, width = x.shape
+
+        q = self.q_proj(x).flatten(2).transpose(1, 2)
+        k = self.k_proj(x).flatten(2)
+        v = self.v_proj(x).flatten(2).transpose(1, 2)
+
+        weights = torch.softmax(torch.matmul(q, k) * self.scale, dim=-1)
+        context = torch.matmul(weights, v)
+        context = context.transpose(1, 2).reshape(
+            batch, self.attn_dim, height, width
+        )
+
+        return x + self.out_proj(context)
+
+
 class GhostModule(torch.nn.Module):
     def __init__(
         self, inp, oup, kernel_size=1, ratio=2, dw_size=3, stride=1, relu=True
@@ -152,7 +200,8 @@ class GhostModule(torch.nn.Module):
                 inp, init_channels, kernel_size, stride, kernel_size // 2, bias=False
             ),
             torch.nn.BatchNorm2d(init_channels),
-            torch.nn.Hardswish(inplace=True) if relu else torch.nn.Sequential(),
+            torch.nn.Hardswish(
+                inplace=True) if relu else torch.nn.Sequential(),
         )
         self.cheap_operation = torch.nn.Sequential(
             torch.nn.Conv2d(
@@ -165,7 +214,8 @@ class GhostModule(torch.nn.Module):
                 bias=False,
             ),
             torch.nn.BatchNorm2d(new_channels),
-            torch.nn.Hardswish(inplace=True) if relu else torch.nn.Sequential(),
+            torch.nn.Hardswish(
+                inplace=True) if relu else torch.nn.Sequential(),
         )
 
     def forward(self, x):
@@ -182,7 +232,8 @@ class ChannelShuffle(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         batch, channels, height, width = x.shape
-        x = x.reshape(batch, self.groups, channels // self.groups, height, width)
+        x = x.reshape(batch, self.groups, channels //
+                      self.groups, height, width)
         x = x.transpose(1, 2).contiguous()
         return x.reshape(batch, channels, height, width)
 
@@ -221,6 +272,18 @@ class GhostShuffleBlock(torch.nn.Module):
         x2 = self.branch2(x2)
         out = torch.cat((x1, x2), dim=1)
         return self.shuffle(out)
+
+
+def _run_trunk_blocks(
+    x: torch.Tensor,
+    blocks: torch.nn.Sequential,
+    board_attention: NaiveBoardSelfAttention,
+) -> torch.Tensor:
+    for index, block in enumerate(blocks):
+        x = block(x)
+        if index + 1 == ATTENTION_AFTER_BLOCK:
+            x = board_attention(x)
+    return x
 
 
 class ValueHead(torch.nn.Module):
@@ -282,7 +345,8 @@ class ModelFull(torch.nn.Module):
         super().__init__()
         self.add_coords = AddCoords(8, 8)
         self.initial_block = torch.nn.Sequential(
-            torch.nn.Conv2d(24, CHANNELS, kernel_size=3, padding=1, bias=False),
+            torch.nn.Conv2d(24, CHANNELS, kernel_size=3,
+                            padding=1, bias=False),
             torch.nn.BatchNorm2d(CHANNELS),
             torch.nn.Hardswish(inplace=True),
         )
@@ -290,6 +354,7 @@ class ModelFull(torch.nn.Module):
         self.blocks = torch.nn.Sequential(
             *[GhostShuffleBlock(CHANNELS, ratio=4) for _ in range(BLOCKS)],
         )
+        self.board_attention = NaiveBoardSelfAttention(CHANNELS, ATTENTION_DIM)
 
         self.value_head = ValueHead()
         self.policy_head = PolicyHead()
@@ -304,7 +369,7 @@ class ModelFull(torch.nn.Module):
 
         out = self.add_coords(x)
         out = self.initial_block(out)
-        out = self.blocks(out)
+        out = _run_trunk_blocks(out, self.blocks, self.board_attention)
 
         value = self.value_head(out, material_diff)
         policy = self.policy_head(out)
@@ -321,14 +386,14 @@ class ModelFull(torch.nn.Module):
 
         out = self.add_coords(x)
         out = self.initial_block(out)
-        out = self.blocks(out)
+        out = _run_trunk_blocks(out, self.blocks, self.board_attention)
 
         return self.value_head(out, material_diff)
 
     def forward_policy(self, x: torch.Tensor) -> torch.Tensor:
         out = self.add_coords(x)
         out = self.initial_block(out)
-        out = self.blocks(out)
+        out = _run_trunk_blocks(out, self.blocks, self.board_attention)
 
         return self.policy_head(out)
 
@@ -339,7 +404,8 @@ class ValueOnlyModel(torch.nn.Module):
 
         self.add_coords = AddCoords(8, 8)
         self.initial_block = torch.nn.Sequential(
-            torch.nn.Conv2d(24, CHANNELS, kernel_size=3, padding=1, bias=False),
+            torch.nn.Conv2d(24, CHANNELS, kernel_size=3,
+                            padding=1, bias=False),
             torch.nn.BatchNorm2d(CHANNELS),
             torch.nn.Hardswish(inplace=True),
         )
@@ -347,6 +413,7 @@ class ValueOnlyModel(torch.nn.Module):
         self.blocks = torch.nn.Sequential(
             *[GhostShuffleBlock(CHANNELS, ratio=4) for _ in range(BLOCKS)],
         )
+        self.board_attention = NaiveBoardSelfAttention(CHANNELS, ATTENTION_DIM)
 
         self.value_head = ValueHead()
 
@@ -360,6 +427,6 @@ class ValueOnlyModel(torch.nn.Module):
 
         out = self.add_coords(x)
         out = self.initial_block(out)
-        out = self.blocks(out)
+        out = _run_trunk_blocks(out, self.blocks, self.board_attention)
 
         return self.value_head(out, material_diff)

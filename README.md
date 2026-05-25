@@ -178,6 +178,7 @@ Input board tensor
   -> Coordinate channels
   -> Convolutional trunk
   -> Ghost shuffle blocks with coordinate attention
+  -> Naive board self-attention after the third trunk block
   -> ValueHead:
        - 1x1 conv path over trunk activations
        - explicit material feature from the original board tensor

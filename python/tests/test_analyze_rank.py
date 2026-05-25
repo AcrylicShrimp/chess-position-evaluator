@@ -21,6 +21,7 @@ class AnalyzeRankHooksTest(unittest.TestCase):
         activations = analyze_rank_module.register_hooks(model)
         expected_names = {
             "initial_block",
+            "board_attention",
             "value_head_conv",
             "value_head_mlp",
             *[f"block_{i}" for i in range(model_module.BLOCKS)],
@@ -43,6 +44,10 @@ class AnalyzeRankHooksTest(unittest.TestCase):
             torch.Size([2, model_module.CHANNELS, 8, 8]),
         )
         self.assertEqual(
+            activations["board_attention"][0].shape,
+            torch.Size([2, model_module.CHANNELS, 8, 8]),
+        )
+        self.assertEqual(
             activations["value_head_conv"][0].shape,
             torch.Size([2, 2, 8, 8]),
         )
@@ -58,7 +63,8 @@ class AnalyzeRankHooksTest(unittest.TestCase):
             checkpoint_path.write_bytes(b"placeholder")
 
             with self.assertRaises(FileNotFoundError) as context:
-                analyze_rank_module.validate_input_paths(checkpoint_path, dataset_path)
+                analyze_rank_module.validate_input_paths(
+                    checkpoint_path, dataset_path)
 
         self.assertIn("validation.chesseval not found", str(context.exception))
 

@@ -17,7 +17,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from libs.dataset import ChessEvaluationDataset
-from libs.model import ValueOnlyModel
+from libs.model import ATTENTION_AFTER_BLOCK, ValueOnlyModel
 from libs.paths import VALIDATION_DATA_PATH, checkpoint_path
 
 
@@ -53,7 +53,8 @@ def run_analyze_rank(model_name: str):
 
     # Load model
     model = ValueOnlyModel()
-    checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+    checkpoint = torch.load(
+        model_path, map_location=device, weights_only=False)
     model.load_state_dict(checkpoint["model"])
     model.to(device)
     model.eval()
@@ -116,6 +117,10 @@ def register_hooks(model: ValueOnlyModel) -> dict:
     # Hook each current trunk block output.
     for i, block in enumerate(model.blocks):
         block.register_forward_hook(make_hook(f"block_{i}"))
+        if i + 1 == ATTENTION_AFTER_BLOCK:
+            model.board_attention.register_forward_hook(
+                make_hook("board_attention")
+            )
 
     # Hook named value head modules.
     model.value_head.conv.register_forward_hook(make_hook("value_head_conv"))
@@ -173,7 +178,8 @@ def print_ascii_plot(name: str, singular_values: torch.Tensor, eff_rank: int):
 
     # Around effective rank threshold
     if eff_rank > 0:
-        indices_to_show.update(range(max(0, eff_rank - 2), min(n_values, eff_rank + 3)))
+        indices_to_show.update(
+            range(max(0, eff_rank - 2), min(n_values, eff_rank + 3)))
 
     # Last 3
     indices_to_show.update(range(max(0, n_values - 3), n_values))
