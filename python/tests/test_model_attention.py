@@ -75,6 +75,43 @@ class ModelAttentionTest(unittest.TestCase):
         self.assertEqual(attention.out_proj.in_channels, model_module.ATTENTION_DIM)
         self.assertEqual(attention.scale, model_module.ATTENTION_HEAD_DIM**-0.5)
 
+    def test_board_attention_stack_contract(self):
+        stack = model_module.BoardAttentionStack(
+            model_module.ATTENTION_LAYERS,
+            model_module.CHANNELS,
+            model_module.ATTENTION_HEADS,
+            model_module.ATTENTION_HEAD_DIM,
+            model_module.ATTENTION_FFN_HIDDEN,
+        )
+
+        self.assertEqual(len(stack.layers), 3)
+        for layer in stack.layers:
+            with self.subTest(layer=layer):
+                self.assertIsInstance(
+                    layer.attention,
+                    model_module.NaiveBoardSelfAttention,
+                )
+                self.assertIsInstance(layer.ffn, model_module.BoardAttentionFFN)
+
+    def test_board_attention_stack_is_identity_when_branch_is_zeroed(self):
+        stack = model_module.BoardAttentionStack(
+            model_module.ATTENTION_LAYERS,
+            model_module.CHANNELS,
+            model_module.ATTENTION_HEADS,
+            model_module.ATTENTION_HEAD_DIM,
+            model_module.ATTENTION_FFN_HIDDEN,
+        )
+        stack.eval()
+        for parameter in stack.parameters():
+            torch.nn.init.zeros_(parameter)
+
+        x = torch.randn(2, model_module.CHANNELS, 8, 8)
+
+        with torch.no_grad():
+            y = stack(x)
+
+        self.assertTrue(torch.equal(y, x))
+
     def test_attention_edge_gate_parameters_are_zero_initialized(self):
         attention = model_module.NaiveBoardSelfAttention(
             model_module.CHANNELS,
@@ -281,7 +318,12 @@ class ModelAttentionTest(unittest.TestCase):
             )
         )
         self.assertIsInstance(
-            model.board_attention, model_module.NaiveBoardSelfAttention
+            model.board_attention,
+            model_module.BoardAttentionStack,
+        )
+        self.assertEqual(
+            len(model.board_attention.layers),
+            model_module.ATTENTION_LAYERS,
         )
 
         call_order = []
@@ -322,6 +364,28 @@ class ModelAttentionTest(unittest.TestCase):
                 "block_5",
             ],
         )
+
+    def test_model_full_and_value_only_use_attention_stack(self):
+        cases = [
+            ("value_only", model_module.ValueOnlyModel()),
+            ("model_full", model_module.ModelFull()),
+        ]
+
+        for name, model in cases:
+            with self.subTest(name=name):
+                self.assertIsInstance(
+                    model.board_attention,
+                    model_module.BoardAttentionStack,
+                )
+                self.assertEqual(
+                    len(model.board_attention.layers),
+                    model_module.ATTENTION_LAYERS,
+                )
+
+    def test_value_only_model_parameter_count_matches_stacked_attention_plan(self):
+        model = model_module.ValueOnlyModel()
+
+        self.assertEqual(sum(p.numel() for p in model.parameters()), 457685)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,8 @@ ATTENTION_AFTER_BLOCK = 3
 ATTENTION_HEADS = 4
 ATTENTION_HEAD_DIM = 16
 ATTENTION_DIM = ATTENTION_HEADS * ATTENTION_HEAD_DIM
+ATTENTION_LAYERS = 3
+ATTENTION_FFN_HIDDEN = 64
 BOARD_ATTENTION_SIZE = 8
 BOARD_ATTENTION_RELATIONS = (
     "same_square",
@@ -346,6 +348,60 @@ class NaiveBoardSelfAttention(torch.nn.Module):
         return x + self.out_proj(context)
 
 
+class BoardAttentionFFN(torch.nn.Module):
+    def __init__(self, channels: int, hidden: int):
+        super().__init__()
+        if hidden <= 0:
+            raise ValueError("board attention FFN requires a positive hidden size")
+
+        self.net = torch.nn.Sequential(
+            torch.nn.Conv2d(channels, hidden, kernel_size=1, bias=False),
+            torch.nn.BatchNorm2d(hidden),
+            torch.nn.Hardswish(inplace=True),
+            torch.nn.Conv2d(hidden, channels, kernel_size=1, bias=False),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + self.net(x)
+
+
+class BoardAttentionBlock(torch.nn.Module):
+    def __init__(self, channels: int, heads: int, head_dim: int, ffn_hidden: int):
+        super().__init__()
+        self.attention = NaiveBoardSelfAttention(channels, heads, head_dim)
+        self.ffn = BoardAttentionFFN(channels, ffn_hidden)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.attention(x)
+        return self.ffn(x)
+
+
+class BoardAttentionStack(torch.nn.Module):
+    def __init__(
+        self,
+        layers: int,
+        channels: int,
+        heads: int,
+        head_dim: int,
+        ffn_hidden: int,
+    ):
+        super().__init__()
+        if layers <= 0:
+            raise ValueError("board attention stack requires at least one layer")
+
+        self.layers = torch.nn.ModuleList(
+            [
+                BoardAttentionBlock(channels, heads, head_dim, ffn_hidden)
+                for _ in range(layers)
+            ]
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for layer in self.layers:
+            x = layer(x)
+        return x
+
+
 class GhostModule(torch.nn.Module):
     def __init__(
         self, inp, oup, kernel_size=1, ratio=2, dw_size=3, stride=1, relu=True
@@ -437,7 +493,7 @@ class GhostShuffleBlock(torch.nn.Module):
 def _run_trunk_blocks(
     x: torch.Tensor,
     blocks: torch.nn.Sequential,
-    board_attention: NaiveBoardSelfAttention,
+    board_attention: torch.nn.Module,
 ) -> torch.Tensor:
     for index, block in enumerate(blocks):
         x = block(x)
@@ -514,8 +570,12 @@ class ModelFull(torch.nn.Module):
         self.blocks = torch.nn.Sequential(
             *[GhostShuffleBlock(CHANNELS, ratio=4) for _ in range(BLOCKS)],
         )
-        self.board_attention = NaiveBoardSelfAttention(
-            CHANNELS, ATTENTION_HEADS, ATTENTION_HEAD_DIM
+        self.board_attention = BoardAttentionStack(
+            ATTENTION_LAYERS,
+            CHANNELS,
+            ATTENTION_HEADS,
+            ATTENTION_HEAD_DIM,
+            ATTENTION_FFN_HIDDEN,
         )
 
         self.value_head = ValueHead()
@@ -575,8 +635,12 @@ class ValueOnlyModel(torch.nn.Module):
         self.blocks = torch.nn.Sequential(
             *[GhostShuffleBlock(CHANNELS, ratio=4) for _ in range(BLOCKS)],
         )
-        self.board_attention = NaiveBoardSelfAttention(
-            CHANNELS, ATTENTION_HEADS, ATTENTION_HEAD_DIM
+        self.board_attention = BoardAttentionStack(
+            ATTENTION_LAYERS,
+            CHANNELS,
+            ATTENTION_HEADS,
+            ATTENTION_HEAD_DIM,
+            ATTENTION_FFN_HIDDEN,
         )
 
         self.value_head = ValueHead()
