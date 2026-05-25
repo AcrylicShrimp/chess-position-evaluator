@@ -28,7 +28,7 @@ BOARD_ATTENTION_RELATIONS = (
 )
 
 
-def _board_attention_geometry() -> tuple[torch.Tensor, torch.Tensor]:
+def _board_attention_geometry() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     coords = torch.stack(
         torch.meshgrid(
             torch.arange(BOARD_ATTENTION_SIZE),
@@ -68,6 +68,10 @@ def _board_attention_geometry() -> tuple[torch.Tensor, torch.Tensor]:
     return (
         relation_masks.reshape(len(BOARD_ATTENTION_RELATIONS), -1).float(),
         distance.reshape(-1),
+        torch.nn.functional.one_hot(
+            distance.reshape(-1),
+            num_classes=BOARD_ATTENTION_SIZE,
+        ).transpose(0, 1).float(),
     )
 
 
@@ -215,7 +219,11 @@ class NaiveBoardSelfAttention(torch.nn.Module):
         self.head_dim = head_dim
         self.attn_dim = heads * head_dim
         self.scale = head_dim**-0.5
-        relation_masks_flat, distance_index_flat = _board_attention_geometry()
+        (
+            relation_masks_flat,
+            distance_index_flat,
+            distance_masks_flat,
+        ) = _board_attention_geometry()
 
         self.q_proj = torch.nn.Conv2d(
             channels, self.attn_dim, kernel_size=1, bias=False
@@ -229,12 +237,72 @@ class NaiveBoardSelfAttention(torch.nn.Module):
         self.out_proj = torch.nn.Conv2d(
             self.attn_dim, channels, kernel_size=1, bias=False
         )
-        self.rel_bias = torch.nn.Parameter(
-            torch.zeros(heads, len(BOARD_ATTENTION_RELATIONS))
+        self.rel_gate_q = torch.nn.Parameter(
+            torch.zeros(heads, len(BOARD_ATTENTION_RELATIONS), head_dim)
         )
-        self.dist_bias = torch.nn.Parameter(torch.zeros(heads, BOARD_ATTENTION_SIZE))
+        self.rel_gate_k = torch.nn.Parameter(
+            torch.zeros(heads, len(BOARD_ATTENTION_RELATIONS), head_dim)
+        )
+        self.dist_gate_q = torch.nn.Parameter(
+            torch.zeros(heads, BOARD_ATTENTION_SIZE, head_dim)
+        )
+        self.dist_gate_k = torch.nn.Parameter(
+            torch.zeros(heads, BOARD_ATTENTION_SIZE, head_dim)
+        )
         self.register_buffer("relation_masks_flat", relation_masks_flat)
         self.register_buffer("distance_index_flat", distance_index_flat)
+        self.register_buffer("distance_masks_flat", distance_masks_flat)
+
+    def _edge_gate_logits(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        tokens: int,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        relation_masks = self.relation_masks_flat.reshape(
+            len(BOARD_ATTENTION_RELATIONS), tokens, tokens
+        ).to(dtype=dtype, device=q.device)
+        distance_masks = self.distance_masks_flat.reshape(
+            BOARD_ATTENTION_SIZE, tokens, tokens
+        ).to(dtype=dtype, device=q.device)
+
+        rel_gate_q = self.rel_gate_q.to(dtype=dtype)
+        rel_gate_k = self.rel_gate_k.to(dtype=dtype)
+        dist_gate_q = self.dist_gate_q.to(dtype=dtype)
+        dist_gate_k = self.dist_gate_k.to(dtype=dtype)
+
+        edge_q_vectors = torch.einsum(
+            "rij,hrd->hijd",
+            relation_masks,
+            rel_gate_q,
+        ) + torch.einsum(
+            "mij,hmd->hijd",
+            distance_masks,
+            dist_gate_q,
+        )
+        edge_k_vectors = torch.einsum(
+            "rij,hrd->hijd",
+            relation_masks,
+            rel_gate_k,
+        ) + torch.einsum(
+            "mij,hmd->hijd",
+            distance_masks,
+            dist_gate_k,
+        )
+
+        edge_q_logits = torch.einsum(
+            "bhid,hijd->bhij",
+            q.to(dtype=dtype),
+            edge_q_vectors,
+        )
+        edge_k_logits = torch.einsum(
+            "bhjd,hijd->bhij",
+            k.to(dtype=dtype),
+            edge_k_vectors,
+        )
+
+        return (edge_q_logits + edge_k_logits) * self.scale
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if not torch.jit.is_tracing() and (x.dim() != 4 or x.shape[1] != self.channels):
@@ -247,7 +315,7 @@ class NaiveBoardSelfAttention(torch.nn.Module):
             height != BOARD_ATTENTION_SIZE or width != BOARD_ATTENTION_SIZE
         ):
             raise ValueError(
-                "board attention relation bias requires 8x8 spatial input"
+                "board attention edge gate requires 8x8 spatial input"
             )
 
         tokens = height * width
@@ -256,24 +324,20 @@ class NaiveBoardSelfAttention(torch.nn.Module):
             batch, self.heads, self.head_dim, tokens
         ).transpose(2, 3)
         k = self.k_proj(x).reshape(batch, self.heads, self.head_dim, tokens)
+        k_tokens = k.transpose(2, 3)
         v = self.v_proj(x).reshape(
             batch, self.heads, self.head_dim, tokens
         ).transpose(2, 3)
 
         logits = torch.matmul(q, k) * self.scale
-        relation_bias = torch.matmul(
-            self.rel_bias,
-            self.relation_masks_flat.to(dtype=self.rel_bias.dtype),
-        ).to(dtype=logits.dtype)
-        distance_bias = self.dist_bias.index_select(
-            dim=1,
-            index=self.distance_index_flat,
-        ).to(dtype=logits.dtype)
-        geometry_bias = (
-            relation_bias + distance_bias
-        ).reshape(1, self.heads, tokens, tokens)
+        edge_gate_logits = self._edge_gate_logits(
+            q,
+            k_tokens,
+            tokens,
+            logits.dtype,
+        )
 
-        weights = torch.softmax(logits + geometry_bias, dim=-1)
+        weights = torch.softmax(logits + edge_gate_logits, dim=-1)
         context = torch.matmul(weights, v)
         context = context.transpose(2, 3).reshape(
             batch, self.attn_dim, height, width

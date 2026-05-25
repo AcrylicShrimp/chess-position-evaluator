@@ -75,37 +75,45 @@ class ModelAttentionTest(unittest.TestCase):
         self.assertEqual(attention.out_proj.in_channels, model_module.ATTENTION_DIM)
         self.assertEqual(attention.scale, model_module.ATTENTION_HEAD_DIM**-0.5)
 
-    def test_attention_relation_bias_parameters_are_zero_initialized(self):
+    def test_attention_edge_gate_parameters_are_zero_initialized(self):
         attention = model_module.NaiveBoardSelfAttention(
             model_module.CHANNELS,
             model_module.ATTENTION_HEADS,
             model_module.ATTENTION_HEAD_DIM,
         )
 
-        self.assertEqual(
-            attention.rel_bias.shape,
-            torch.Size(
-                [
-                    model_module.ATTENTION_HEADS,
-                    len(model_module.BOARD_ATTENTION_RELATIONS),
-                ]
-            ),
+        expected_relation_shape = torch.Size(
+            [
+                model_module.ATTENTION_HEADS,
+                len(model_module.BOARD_ATTENTION_RELATIONS),
+                model_module.ATTENTION_HEAD_DIM,
+            ]
         )
-        self.assertEqual(
-            attention.dist_bias.shape,
-            torch.Size(
-                [
-                    model_module.ATTENTION_HEADS,
-                    model_module.BOARD_ATTENTION_SIZE,
-                ]
-            ),
+        expected_distance_shape = torch.Size(
+            [
+                model_module.ATTENTION_HEADS,
+                model_module.BOARD_ATTENTION_SIZE,
+                model_module.ATTENTION_HEAD_DIM,
+            ]
         )
-        self.assertTrue(
-            torch.equal(attention.rel_bias, torch.zeros_like(attention.rel_bias))
-        )
-        self.assertTrue(
-            torch.equal(attention.dist_bias, torch.zeros_like(attention.dist_bias))
-        )
+
+        self.assertEqual(attention.rel_gate_q.shape, expected_relation_shape)
+        self.assertEqual(attention.rel_gate_k.shape, expected_relation_shape)
+        self.assertEqual(attention.dist_gate_q.shape, expected_distance_shape)
+        self.assertEqual(attention.dist_gate_k.shape, expected_distance_shape)
+
+        for name in [
+            "rel_gate_q",
+            "rel_gate_k",
+            "dist_gate_q",
+            "dist_gate_k",
+        ]:
+            parameter = getattr(attention, name)
+            with self.subTest(name=name):
+                self.assertTrue(torch.equal(parameter, torch.zeros_like(parameter)))
+
+        self.assertNotIn("rel_bias", dict(attention.named_parameters()))
+        self.assertNotIn("dist_bias", dict(attention.named_parameters()))
 
     def test_attention_geometry_masks_match_chess_board_relations(self):
         attention = model_module.NaiveBoardSelfAttention(
@@ -172,37 +180,50 @@ class ModelAttentionTest(unittest.TestCase):
                     attention.distance_index_flat[pair_index(query, key)].item(),
                     expected,
                 )
+                self.assertEqual(
+                    attention.distance_masks_flat[
+                        expected,
+                        pair_index(query, key),
+                    ].item(),
+                    1.0,
+                )
 
-    def test_attention_geometry_bias_composes_relations_and_distance(self):
+    def test_attention_edge_gate_composes_relations_and_distance(self):
         attention = model_module.NaiveBoardSelfAttention(
             model_module.CHANNELS,
             model_module.ATTENTION_HEADS,
             model_module.ATTENTION_HEAD_DIM,
         )
         with torch.no_grad():
-            attention.rel_bias.zero_()
-            attention.dist_bias.zero_()
-            attention.rel_bias[0, relation_index("same_file")] = 2.0
-            attention.rel_bias[0, relation_index("king_adjacent")] = 3.0
-            attention.dist_bias[0, 1] = 0.5
+            attention.rel_gate_q.zero_()
+            attention.rel_gate_k.zero_()
+            attention.dist_gate_q.zero_()
+            attention.dist_gate_k.zero_()
+            attention.rel_gate_q[0, relation_index("same_file"), 0] = 1.0
+            attention.rel_gate_k[0, relation_index("king_adjacent"), 0] = 2.0
+            attention.dist_gate_q[0, 1, 0] = 4.0
+            attention.dist_gate_k[0, 1, 0] = 5.0
 
-        relation_bias = attention.rel_bias @ attention.relation_masks_flat
-        distance_bias = attention.dist_bias.index_select(
-            dim=1,
-            index=attention.distance_index_flat,
-        )
-        bias = (relation_bias + distance_bias).reshape(
-            attention.heads,
-            model_module.BOARD_ATTENTION_SIZE * model_module.BOARD_ATTENTION_SIZE,
-            model_module.BOARD_ATTENTION_SIZE * model_module.BOARD_ATTENTION_SIZE,
-        )
-
+        tokens = model_module.BOARD_ATTENTION_SIZE * model_module.BOARD_ATTENTION_SIZE
+        q = torch.zeros(1, attention.heads, tokens, attention.head_dim)
+        k = torch.zeros(1, attention.heads, tokens, attention.head_dim)
         query = square(3, 3)
         key = square(4, 3)
-        self.assertEqual(bias[0, query, key].item(), 5.5)
-        self.assertEqual(bias[1, query, key].item(), 0.0)
+        q[0, 0, query, 0] = 2.0
+        k[0, 0, key, 0] = 3.0
 
-    def test_zero_relation_bias_matches_unbiased_attention_logits(self):
+        edge_gate_logits = attention._edge_gate_logits(
+            q,
+            k,
+            tokens,
+            torch.float32,
+        )
+
+        expected = (2.0 + 6.0 + 8.0 + 15.0) * attention.scale
+        self.assertEqual(edge_gate_logits[0, 0, query, key].item(), expected)
+        self.assertEqual(edge_gate_logits[0, 1, query, key].item(), 0.0)
+
+    def test_zero_edge_gate_matches_unbiased_attention_logits(self):
         torch.manual_seed(0)
         attention = model_module.NaiveBoardSelfAttention(
             model_module.CHANNELS,
