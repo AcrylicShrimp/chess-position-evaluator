@@ -29,7 +29,7 @@ cpe = "cli:app"
 
 [tool.setuptools]
 package-dir = { "" = "python" }
-py-modules = ["analyze_rank", "cli", "eval", "export_onnx"]
+py-modules = ["analyze_rank", "cli", "eval", "eval_dataset", "export_onnx"]
 
 [tool.setuptools.packages.find]
 where = ["python"]

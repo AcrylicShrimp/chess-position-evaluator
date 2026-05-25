@@ -8,7 +8,8 @@ by Git.
 ```text
 artifacts/
 ├── checkpoints/  # Local training checkpoints
-└── onnx/         # Local ONNX exports
+├── onnx/         # Local ONNX exports
+└── reports/      # Local evaluation reports
 ```
 
 Expected local files:
@@ -17,6 +18,7 @@ Expected local files:
 - `artifacts/checkpoints/<experiment-name>-best.pth`
 - `artifacts/onnx/<model-name>.onnx`
 - optional ONNX external data files such as `artifacts/onnx/<model-name>.onnx.data`
+- `artifacts/reports/<model-name>.<split>.eval.json`
 
 Use WandB artifacts, release assets, or another explicit external artifact store
 for model files that need to be shared.

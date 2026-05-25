@@ -16,7 +16,14 @@ class CliSmokeTest(unittest.TestCase):
         result = CliRunner().invoke(cli_module.app, ["--help"])
 
         self.assertEqual(result.exit_code, 0, result.output)
-        for command in ["train", "analyze-rank", "eval", "battle", "export-onnx"]:
+        for command in [
+            "train",
+            "analyze-rank",
+            "eval-dataset",
+            "eval",
+            "battle",
+            "export-onnx",
+        ]:
             self.assertIn(command, result.output)
 
 

@@ -4,6 +4,7 @@ Unified CLI for Chess Position Evaluator.
 Usage:
     cpe train <experiment-name> --epochs N --steps N --batch N --lr F --wd F [--resume]
     cpe analyze-rank <model-name>
+    cpe eval-dataset <model-name>
     cpe eval <model-name>
     cpe battle <model-name>
     cpe export-onnx <model-name>
@@ -11,6 +12,7 @@ Usage:
 
 from dotenv import find_dotenv, load_dotenv
 import os
+from pathlib import Path
 import re
 import typer
 
@@ -135,6 +137,46 @@ def eval(
     from eval import run_eval
 
     run_eval(model_name)
+
+
+@app.command("eval-dataset")
+def eval_dataset(
+    model_name: str = typer.Argument(...,
+                                     help="Model name (without .pth extension)"),
+    split: str = typer.Option(
+        "validation",
+        help="Dataset split: train or validation",
+    ),
+    dataset: Path | None = typer.Option(None, help="Override dataset path"),
+    rows: int | None = typer.Option(
+        None,
+        min=1,
+        help="Evaluate the first N rows. Mutually exclusive with --full.",
+    ),
+    full: bool = typer.Option(False, help="Evaluate the full dataset split"),
+    batch: int = typer.Option(4096, min=1, help="Evaluation batch size"),
+    seed: int = typer.Option(0, help="Recorded sampling seed"),
+    device: str = typer.Option("auto", help="Device: auto, cpu, cuda, or mps"),
+    output: Path | None = typer.Option(None, help="Report output path"),
+):
+    """Evaluate a checkpoint against a processed dataset split."""
+    from eval_dataset import run_eval_dataset
+
+    try:
+        run_eval_dataset(
+            model_name=model_name,
+            split=split,
+            dataset_path=dataset,
+            rows=rows,
+            full=full,
+            batch_size=batch,
+            seed=seed,
+            device_name=device,
+            output_path=output,
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        print(f"Error: {exc}")
+        raise typer.Exit(1) from exc
 
 
 @app.command()

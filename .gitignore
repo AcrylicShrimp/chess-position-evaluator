@@ -16,6 +16,8 @@
 !/artifacts/checkpoints/.gitkeep
 /artifacts/onnx/*
 !/artifacts/onnx/.gitkeep
+/artifacts/reports/*
+!/artifacts/reports/.gitkeep
 
 tensorboard/
 wandb/

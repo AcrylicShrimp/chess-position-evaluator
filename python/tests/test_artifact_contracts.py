@@ -40,6 +40,11 @@ class ArtifactContractTest(unittest.TestCase):
             paths.onnx_path("experiment"),
             Path("artifacts/onnx/experiment.onnx"),
         )
+        self.assertEqual(paths.REPORTS_DIR, Path("artifacts/reports"))
+        self.assertEqual(
+            paths.evaluation_report_path("experiment", "validation"),
+            Path("artifacts/reports/experiment.validation.eval.json"),
+        )
 
     def test_python_entrypoints_use_canonical_runtime_paths(self):
         self.assertEqual(
