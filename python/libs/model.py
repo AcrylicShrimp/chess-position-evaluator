@@ -14,6 +14,61 @@ ATTENTION_AFTER_BLOCK = 3
 ATTENTION_HEADS = 4
 ATTENTION_HEAD_DIM = 16
 ATTENTION_DIM = ATTENTION_HEADS * ATTENTION_HEAD_DIM
+BOARD_ATTENTION_SIZE = 8
+BOARD_ATTENTION_RELATIONS = (
+    "same_square",
+    "same_rank",
+    "same_file",
+    "same_diagonal",
+    "same_anti_diagonal",
+    "knight_move",
+    "king_adjacent",
+    "our_pawn_attack_geometry",
+    "their_pawn_attack_geometry",
+)
+
+
+def _board_attention_geometry() -> tuple[torch.Tensor, torch.Tensor]:
+    coords = torch.stack(
+        torch.meshgrid(
+            torch.arange(BOARD_ATTENTION_SIZE),
+            torch.arange(BOARD_ATTENTION_SIZE),
+            indexing="ij",
+        ),
+        dim=-1,
+    ).reshape(-1, 2)
+
+    query_rows = coords[:, 0].view(-1, 1)
+    query_files = coords[:, 1].view(-1, 1)
+    key_rows = coords[:, 0].view(1, -1)
+    key_files = coords[:, 1].view(1, -1)
+
+    dr = key_rows - query_rows
+    df = key_files - query_files
+    abs_dr = dr.abs()
+    abs_df = df.abs()
+    distance = torch.maximum(abs_dr, abs_df).long()
+
+    relation_masks = torch.stack(
+        [
+            (dr == 0) & (df == 0),
+            (dr == 0) & (df != 0),
+            (df == 0) & (dr != 0),
+            (dr == df) & (dr != 0),
+            (dr == -df) & (dr != 0),
+            ((abs_dr == 1) & (abs_df == 2))
+            | ((abs_dr == 2) & (abs_df == 1)),
+            distance == 1,
+            (dr == 1) & (abs_df == 1),
+            (dr == -1) & (abs_df == 1),
+        ],
+        dim=0,
+    )
+
+    return (
+        relation_masks.reshape(len(BOARD_ATTENTION_RELATIONS), -1).float(),
+        distance.reshape(-1),
+    )
 
 
 def _material_diff_from_board(
@@ -160,6 +215,7 @@ class NaiveBoardSelfAttention(torch.nn.Module):
         self.head_dim = head_dim
         self.attn_dim = heads * head_dim
         self.scale = head_dim**-0.5
+        relation_masks_flat, distance_index_flat = _board_attention_geometry()
 
         self.q_proj = torch.nn.Conv2d(
             channels, self.attn_dim, kernel_size=1, bias=False
@@ -173,6 +229,12 @@ class NaiveBoardSelfAttention(torch.nn.Module):
         self.out_proj = torch.nn.Conv2d(
             self.attn_dim, channels, kernel_size=1, bias=False
         )
+        self.rel_bias = torch.nn.Parameter(
+            torch.zeros(heads, len(BOARD_ATTENTION_RELATIONS))
+        )
+        self.dist_bias = torch.nn.Parameter(torch.zeros(heads, BOARD_ATTENTION_SIZE))
+        self.register_buffer("relation_masks_flat", relation_masks_flat)
+        self.register_buffer("distance_index_flat", distance_index_flat)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if not torch.jit.is_tracing() and (x.dim() != 4 or x.shape[1] != self.channels):
@@ -181,6 +243,13 @@ class NaiveBoardSelfAttention(torch.nn.Module):
             )
 
         batch, _channels, height, width = x.shape
+        if not torch.jit.is_tracing() and (
+            height != BOARD_ATTENTION_SIZE or width != BOARD_ATTENTION_SIZE
+        ):
+            raise ValueError(
+                "board attention relation bias requires 8x8 spatial input"
+            )
+
         tokens = height * width
 
         q = self.q_proj(x).reshape(
@@ -191,7 +260,20 @@ class NaiveBoardSelfAttention(torch.nn.Module):
             batch, self.heads, self.head_dim, tokens
         ).transpose(2, 3)
 
-        weights = torch.softmax(torch.matmul(q, k) * self.scale, dim=-1)
+        logits = torch.matmul(q, k) * self.scale
+        relation_bias = torch.matmul(
+            self.rel_bias,
+            self.relation_masks_flat.to(dtype=self.rel_bias.dtype),
+        ).to(dtype=logits.dtype)
+        distance_bias = self.dist_bias.index_select(
+            dim=1,
+            index=self.distance_index_flat,
+        ).to(dtype=logits.dtype)
+        geometry_bias = (
+            relation_bias + distance_bias
+        ).reshape(1, self.heads, tokens, tokens)
+
+        weights = torch.softmax(logits + geometry_bias, dim=-1)
         context = torch.matmul(weights, v)
         context = context.transpose(2, 3).reshape(
             batch, self.attn_dim, height, width
