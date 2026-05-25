@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader, Subset
 from libs.dataset import ChessEvaluationDataset
 from libs.model import ValueOnlyModel
 from libs.paths import (
+    TEST_DATA_PATH,
     TRAIN_DATA_PATH,
     VALIDATION_DATA_PATH,
     checkpoint_path,
@@ -171,6 +172,9 @@ def resolve_dataset_path(split: str, explicit_path: Path | None) -> Path:
 
     if split == "validation":
         return VALIDATION_DATA_PATH
+
+    if split == "test":
+        return TEST_DATA_PATH
 
     raise ValueError(f"unsupported split: {split}")
 

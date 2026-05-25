@@ -14,6 +14,7 @@ RAW_EVALUATIONS_PATH = RAW_DATA_DIR / "lichess_db_eval.jsonl"
 DUCKDB_TEMP_PATH = INTERIM_DATA_DIR / "lichess_db_eval.duckdb.tmp"
 TRAIN_DATA_PATH = PROCESSED_DATA_DIR / "train.chesseval"
 VALIDATION_DATA_PATH = PROCESSED_DATA_DIR / "validation.chesseval"
+TEST_DATA_PATH = PROCESSED_DATA_DIR / "test.chesseval"
 
 
 def checkpoint_path(model_name: str) -> Path:

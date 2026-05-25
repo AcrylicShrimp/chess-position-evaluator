@@ -4,6 +4,7 @@ import math
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import torch
@@ -89,6 +90,32 @@ class EvaluationReportContractTest(unittest.TestCase):
                 seed=0,
             )
 
+    def test_resolve_dataset_path_supports_test_split(self):
+        self.assertEqual(
+            eval_dataset.resolve_dataset_path("test", None),
+            Path("data/processed/test.chesseval"),
+        )
+
+    def test_missing_test_dataset_fails_clearly(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoint_path = Path(tmpdir) / "model.pth"
+            missing_test_path = Path(tmpdir) / "test.chesseval"
+            checkpoint_path.write_bytes(b"placeholder")
+
+            with mock.patch.object(
+                eval_dataset,
+                "checkpoint_path",
+                return_value=checkpoint_path,
+            ), mock.patch.object(
+                eval_dataset,
+                "TEST_DATA_PATH",
+                missing_test_path,
+            ):
+                with self.assertRaises(FileNotFoundError) as context:
+                    eval_dataset.run_eval_dataset("model", split="test")
+
+        self.assertIn("test.chesseval not found", str(context.exception))
+
     def test_report_has_stable_top_level_shape_and_validation_warning(self):
         accumulator = eval_dataset.EvaluationAccumulator()
         accumulator.update(torch.tensor([[0.0]]), torch.tensor([[0.5]]))
@@ -129,6 +156,31 @@ class EvaluationReportContractTest(unittest.TestCase):
             "validation_split_is_model_selection_data",
             report["warnings"],
         )
+
+    def test_test_report_has_no_validation_warning(self):
+        accumulator = eval_dataset.EvaluationAccumulator()
+        accumulator.update(torch.tensor([[0.0]]), torch.tensor([[0.5]]))
+        selection = eval_dataset.EvaluationSelection(
+            dataset_rows=1,
+            evaluated_rows=1,
+            selection="full",
+            seed=0,
+        )
+
+        report = eval_dataset.build_report(
+            model_name="example",
+            checkpoint={},
+            model_path=Path("artifacts/checkpoints/example.pth"),
+            split="test",
+            dataset_path=Path("data/processed/test.chesseval"),
+            selection=selection,
+            device=torch.device("cpu"),
+            batch_size=1,
+            duration_seconds=0.0,
+            accumulator=accumulator,
+        )
+
+        self.assertEqual(report["warnings"], [])
 
     def test_write_report_emits_strict_json(self):
         accumulator = eval_dataset.EvaluationAccumulator()

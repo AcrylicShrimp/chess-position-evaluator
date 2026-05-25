@@ -76,6 +76,13 @@ uv run cpe analyze-rank <model-name>
 
 `analyze-rank` requires `data/processed/validation.chesseval`.
 
+Evaluate a checkpoint against a processed dataset split:
+
+```bash
+uv run cpe eval-dataset <model-name> --split validation
+uv run cpe eval-dataset <model-name> --split test --full
+```
+
 ## Data Preparation
 
 Training data comes from the
@@ -93,7 +100,7 @@ Example:
 ```bash
 mv <download-dir>/lichess_db_eval.jsonl.zst data/raw/lichess_db_eval.jsonl.zst
 unzstd data/raw/lichess_db_eval.jsonl.zst
-cargo run -p preprocess
+cargo run --release -p preprocess
 ```
 
 The preprocessing command runs from the repository root and writes:
@@ -101,6 +108,7 @@ The preprocessing command runs from the repository root and writes:
 ```text
 data/processed/train.chesseval
 data/processed/validation.chesseval
+data/processed/test.chesseval
 data/interim/lichess_db_eval.duckdb.tmp
 ```
 
@@ -226,7 +234,8 @@ chess-position-evaluator/
 │   └── processed/
 ├── artifacts/                  # Ignored runtime model artifacts
 │   ├── checkpoints/
-│   └── onnx/
+│   ├── onnx/
+│   └── reports/
 ├── docs/todos/
 ├── pyproject.toml
 ├── uv.lock

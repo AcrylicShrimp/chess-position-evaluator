@@ -145,7 +145,7 @@ def eval_dataset(
                                      help="Model name (without .pth extension)"),
     split: str = typer.Option(
         "validation",
-        help="Dataset split: train or validation",
+        help="Dataset split: train, validation, or test",
     ),
     dataset: Path | None = typer.Option(None, help="Override dataset path"),
     rows: int | None = typer.Option(

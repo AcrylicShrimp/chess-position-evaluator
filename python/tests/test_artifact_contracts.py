@@ -6,8 +6,7 @@ from pathlib import Path
 PYTHON_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PYTHON_ROOT))
 
-from libs import paths
-
+paths = importlib.import_module("libs.paths")
 analyze_rank = importlib.import_module("analyze_rank")
 battle_entry = importlib.import_module("battle.entry")
 eval_module = importlib.import_module("eval")
@@ -31,6 +30,10 @@ class ArtifactContractTest(unittest.TestCase):
         self.assertEqual(
             paths.VALIDATION_DATA_PATH,
             Path("data/processed/validation.chesseval"),
+        )
+        self.assertEqual(
+            paths.TEST_DATA_PATH,
+            Path("data/processed/test.chesseval"),
         )
         self.assertEqual(
             paths.checkpoint_path("experiment"),

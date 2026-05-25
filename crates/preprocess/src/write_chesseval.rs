@@ -29,7 +29,7 @@ pub async fn write_chesseval(
     path: impl AsRef<Path>,
     offset: i64,
     limit: i64,
-) -> Result<(), anyhow::Error> {
+) -> Result<usize, anyhow::Error> {
     const CHUNK_SIZE: usize = 256 * 1024;
 
     let duckdb_temp_path = duckdb_temp_path.as_ref();
@@ -61,7 +61,7 @@ pub async fn write_chesseval(
     file.write_all(&(total_row_count as u64).to_le_bytes())?;
     file.flush()?;
 
-    Ok(())
+    Ok(total_row_count)
 }
 
 fn process_chunk(

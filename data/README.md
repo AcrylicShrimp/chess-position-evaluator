@@ -17,5 +17,6 @@ Expected local files:
 - `data/interim/lichess_db_eval.duckdb.tmp`
 - `data/processed/train.chesseval`
 - `data/processed/validation.chesseval`
+- `data/processed/test.chesseval`
 
 Only `README.md` and `.gitkeep` files should be committed from this directory.

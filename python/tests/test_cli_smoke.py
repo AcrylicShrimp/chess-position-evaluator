@@ -26,6 +26,13 @@ class CliSmokeTest(unittest.TestCase):
         ]:
             self.assertIn(command, result.output)
 
+    def test_eval_dataset_help_lists_test_split(self):
+        result = CliRunner().invoke(cli_module.app, ["eval-dataset", "--help"])
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("Dataset split: train,", result.output)
+        self.assertIn("validation, or test", result.output)
+
 
 if __name__ == "__main__":
     unittest.main()

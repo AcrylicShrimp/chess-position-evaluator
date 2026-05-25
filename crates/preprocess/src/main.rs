@@ -7,23 +7,19 @@ const DUCKDB_TEMP_PATH: &str = "data/interim/lichess_db_eval.duckdb.tmp";
 const CHESS_EVALUATION_DB_PATH: &str = "data/raw/lichess_db_eval.jsonl";
 const TRAIN_CHESSEVAL_PATH: &str = "data/processed/train.chesseval";
 const VALIDATION_CHESSEVAL_PATH: &str = "data/processed/validation.chesseval";
+const TEST_CHESSEVAL_PATH: &str = "data/processed/test.chesseval";
 const DATASET_RATIO: f64 = 1.0;
-const VALIDATION_SET_RATIO: f64 = 0.1;
+const TRAIN_SET_RATIO: f64 = 0.9;
+const VALIDATION_SET_RATIO: f64 = 0.05;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     tokio::fs::create_dir_all("data/interim").await?;
     tokio::fs::create_dir_all("data/processed").await?;
 
-    if tokio::fs::try_exists(TRAIN_CHESSEVAL_PATH).await? {
-        println!("{TRAIN_CHESSEVAL_PATH} already exists; removing...");
-        tokio::fs::remove_file(TRAIN_CHESSEVAL_PATH).await?;
-    }
-
-    if tokio::fs::try_exists(VALIDATION_CHESSEVAL_PATH).await? {
-        println!("{VALIDATION_CHESSEVAL_PATH} already exists; removing...");
-        tokio::fs::remove_file(VALIDATION_CHESSEVAL_PATH).await?;
-    }
+    remove_existing_file(TRAIN_CHESSEVAL_PATH).await?;
+    remove_existing_file(VALIDATION_CHESSEVAL_PATH).await?;
+    remove_existing_file(TEST_CHESSEVAL_PATH).await?;
 
     create_temp_table(DUCKDB_TEMP_PATH, CHESS_EVALUATION_DB_PATH).await?;
 
@@ -34,33 +30,59 @@ async fn main() -> Result<(), anyhow::Error> {
     println!("total {row_count} rows loaded");
 
     let dataset_size = (row_count as f64 * DATASET_RATIO) as i64;
-    println!("will use {dataset_size} rows for training and validation");
+    println!("will use {dataset_size} rows for training, validation, and test");
 
     check_minimum_entropy(&conn)?;
 
-    // 2. compute train and validation set sizes
+    // 2. compute train, validation, and test set sizes
+    let train_set_size = (dataset_size as f64 * TRAIN_SET_RATIO) as i64;
     let validation_set_size = (dataset_size as f64 * VALIDATION_SET_RATIO) as i64;
-    let train_set_size = dataset_size - validation_set_size;
+    let test_set_size = dataset_size - train_set_size - validation_set_size;
+    let validation_offset = train_set_size;
+    let test_offset = train_set_size + validation_set_size;
 
-    println!("train set size: {train_set_size}");
-    println!("validation set size: {validation_set_size}");
+    println!("train source window size: {train_set_size}");
+    println!("validation source window size: {validation_set_size}");
+    println!("test source window size: {test_set_size}");
 
     drop(conn);
 
     println!("writing train set to {TRAIN_CHESSEVAL_PATH}");
-    write_chesseval::write_chesseval(DUCKDB_TEMP_PATH, TRAIN_CHESSEVAL_PATH, 0, train_set_size)
-        .await?;
+    let train_rows_written =
+        write_chesseval::write_chesseval(DUCKDB_TEMP_PATH, TRAIN_CHESSEVAL_PATH, 0, train_set_size)
+            .await?;
+    println!("train rows written: {train_rows_written}");
 
     println!("writing validation set to {VALIDATION_CHESSEVAL_PATH}");
-    write_chesseval::write_chesseval(
+    let validation_rows_written = write_chesseval::write_chesseval(
         DUCKDB_TEMP_PATH,
         VALIDATION_CHESSEVAL_PATH,
-        train_set_size,
+        validation_offset,
         validation_set_size,
     )
     .await?;
+    println!("validation rows written: {validation_rows_written}");
+
+    println!("writing test set to {TEST_CHESSEVAL_PATH}");
+    let test_rows_written = write_chesseval::write_chesseval(
+        DUCKDB_TEMP_PATH,
+        TEST_CHESSEVAL_PATH,
+        test_offset,
+        test_set_size,
+    )
+    .await?;
+    println!("test rows written: {test_rows_written}");
 
     println!("done");
+
+    Ok(())
+}
+
+async fn remove_existing_file(path: &str) -> Result<(), anyhow::Error> {
+    if tokio::fs::try_exists(path).await? {
+        println!("{path} already exists; removing...");
+        tokio::fs::remove_file(path).await?;
+    }
 
     Ok(())
 }
