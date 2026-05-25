@@ -8,10 +8,12 @@ _MATERIAL_VALUES = torch.tensor(
 _MATERIAL_ALPHA = 5.0
 
 
-CHANNELS = 256
+CHANNELS = 192
 BLOCKS = 6
 ATTENTION_AFTER_BLOCK = 3
-ATTENTION_DIM = 64
+ATTENTION_HEADS = 4
+ATTENTION_HEAD_DIM = 16
+ATTENTION_DIM = ATTENTION_HEADS * ATTENTION_HEAD_DIM
 
 
 def _material_diff_from_board(
@@ -146,23 +148,30 @@ class CoordinateAttention(torch.nn.Module):
 
 
 class NaiveBoardSelfAttention(torch.nn.Module):
-    def __init__(self, channels: int, attn_dim: int):
+    def __init__(self, channels: int, heads: int, head_dim: int):
         super().__init__()
+        if heads <= 0:
+            raise ValueError("board attention requires at least one head")
+        if head_dim <= 0:
+            raise ValueError("board attention requires a positive head dimension")
+
         self.channels = channels
-        self.attn_dim = attn_dim
-        self.scale = attn_dim**-0.5
+        self.heads = heads
+        self.head_dim = head_dim
+        self.attn_dim = heads * head_dim
+        self.scale = head_dim**-0.5
 
         self.q_proj = torch.nn.Conv2d(
-            channels, attn_dim, kernel_size=1, bias=False
+            channels, self.attn_dim, kernel_size=1, bias=False
         )
         self.k_proj = torch.nn.Conv2d(
-            channels, attn_dim, kernel_size=1, bias=False
+            channels, self.attn_dim, kernel_size=1, bias=False
         )
         self.v_proj = torch.nn.Conv2d(
-            channels, attn_dim, kernel_size=1, bias=False
+            channels, self.attn_dim, kernel_size=1, bias=False
         )
         self.out_proj = torch.nn.Conv2d(
-            attn_dim, channels, kernel_size=1, bias=False
+            self.attn_dim, channels, kernel_size=1, bias=False
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -172,14 +181,19 @@ class NaiveBoardSelfAttention(torch.nn.Module):
             )
 
         batch, _channels, height, width = x.shape
+        tokens = height * width
 
-        q = self.q_proj(x).flatten(2).transpose(1, 2)
-        k = self.k_proj(x).flatten(2)
-        v = self.v_proj(x).flatten(2).transpose(1, 2)
+        q = self.q_proj(x).reshape(
+            batch, self.heads, self.head_dim, tokens
+        ).transpose(2, 3)
+        k = self.k_proj(x).reshape(batch, self.heads, self.head_dim, tokens)
+        v = self.v_proj(x).reshape(
+            batch, self.heads, self.head_dim, tokens
+        ).transpose(2, 3)
 
         weights = torch.softmax(torch.matmul(q, k) * self.scale, dim=-1)
         context = torch.matmul(weights, v)
-        context = context.transpose(1, 2).reshape(
+        context = context.transpose(2, 3).reshape(
             batch, self.attn_dim, height, width
         )
 
@@ -354,7 +368,9 @@ class ModelFull(torch.nn.Module):
         self.blocks = torch.nn.Sequential(
             *[GhostShuffleBlock(CHANNELS, ratio=4) for _ in range(BLOCKS)],
         )
-        self.board_attention = NaiveBoardSelfAttention(CHANNELS, ATTENTION_DIM)
+        self.board_attention = NaiveBoardSelfAttention(
+            CHANNELS, ATTENTION_HEADS, ATTENTION_HEAD_DIM
+        )
 
         self.value_head = ValueHead()
         self.policy_head = PolicyHead()
@@ -413,7 +429,9 @@ class ValueOnlyModel(torch.nn.Module):
         self.blocks = torch.nn.Sequential(
             *[GhostShuffleBlock(CHANNELS, ratio=4) for _ in range(BLOCKS)],
         )
-        self.board_attention = NaiveBoardSelfAttention(CHANNELS, ATTENTION_DIM)
+        self.board_attention = NaiveBoardSelfAttention(
+            CHANNELS, ATTENTION_HEADS, ATTENTION_HEAD_DIM
+        )
 
         self.value_head = ValueHead()
 

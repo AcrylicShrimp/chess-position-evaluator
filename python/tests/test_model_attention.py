@@ -14,7 +14,9 @@ model_module = importlib.import_module("libs.model")
 class ModelAttentionTest(unittest.TestCase):
     def test_naive_board_self_attention_preserves_shape_and_finiteness(self):
         attention = model_module.NaiveBoardSelfAttention(
-            model_module.CHANNELS, model_module.ATTENTION_DIM
+            model_module.CHANNELS,
+            model_module.ATTENTION_HEADS,
+            model_module.ATTENTION_HEAD_DIM,
         )
         attention.eval()
         x = torch.randn(2, model_module.CHANNELS, 8, 8)
@@ -27,7 +29,9 @@ class ModelAttentionTest(unittest.TestCase):
 
     def test_naive_board_self_attention_is_identity_when_branch_is_zeroed(self):
         attention = model_module.NaiveBoardSelfAttention(
-            model_module.CHANNELS, model_module.ATTENTION_DIM
+            model_module.CHANNELS,
+            model_module.ATTENTION_HEADS,
+            model_module.ATTENTION_HEAD_DIM,
         )
         attention.eval()
         for parameter in attention.parameters():
@@ -39,6 +43,22 @@ class ModelAttentionTest(unittest.TestCase):
             y = attention(x)
 
         self.assertTrue(torch.equal(y, x))
+
+    def test_naive_board_self_attention_uses_four_heads(self):
+        attention = model_module.NaiveBoardSelfAttention(
+            model_module.CHANNELS,
+            model_module.ATTENTION_HEADS,
+            model_module.ATTENTION_HEAD_DIM,
+        )
+
+        self.assertEqual(attention.heads, 4)
+        self.assertEqual(attention.head_dim, 16)
+        self.assertEqual(attention.attn_dim, model_module.ATTENTION_DIM)
+        self.assertEqual(attention.q_proj.out_channels, model_module.ATTENTION_DIM)
+        self.assertEqual(attention.k_proj.out_channels, model_module.ATTENTION_DIM)
+        self.assertEqual(attention.v_proj.out_channels, model_module.ATTENTION_DIM)
+        self.assertEqual(attention.out_proj.in_channels, model_module.ATTENTION_DIM)
+        self.assertEqual(attention.scale, model_module.ATTENTION_HEAD_DIM**-0.5)
 
     def test_value_only_model_attention_placement(self):
         model = model_module.ValueOnlyModel()

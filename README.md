@@ -14,7 +14,8 @@ display.
 - Rust preprocessing pipeline for converting the Lichess evaluation database
   into compact `.chesseval` datasets.
 - Value-only CNN model with coordinate channels, Ghost shuffle blocks,
-  coordinate attention, and an explicit board-material feature.
+  coordinate attention, board self-attention, and an explicit board-material
+  feature.
 - WandB logging and optional checkpoint artifact uploads during training.
 - Python and Rust inference paths for local experimentation.
 
@@ -178,7 +179,7 @@ Input board tensor
   -> Coordinate channels
   -> Convolutional trunk
   -> Ghost shuffle blocks with coordinate attention
-  -> Naive board self-attention after the third trunk block
+  -> Multi-head naive board self-attention after the third trunk block
   -> ValueHead:
        - 1x1 conv path over trunk activations
        - explicit material feature from the original board tensor
