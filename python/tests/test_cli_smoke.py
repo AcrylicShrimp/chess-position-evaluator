@@ -33,6 +33,14 @@ class CliSmokeTest(unittest.TestCase):
         self.assertIn("Dataset split: train,", result.output)
         self.assertIn("validation, or test", result.output)
 
+    def test_train_help_lists_scheduler_options(self):
+        result = CliRunner().invoke(cli_module.app, ["train", "--help"])
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("--scheduler", result.output)
+        self.assertIn("warmup-cosine", result.output)
+        self.assertIn("--warmup-epochs", result.output)
+
 
 if __name__ == "__main__":
     unittest.main()

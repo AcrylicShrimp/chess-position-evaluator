@@ -40,20 +40,33 @@ def train(
     batch: int = typer.Option(..., help="Batch size"),
     lr: float = typer.Option(..., help="Learning rate"),
     wd: float = typer.Option(..., help="Weight decay"),
+    scheduler: str = typer.Option(
+        "warm-restart",
+        help="Scheduler: warm-restart or warmup-cosine",
+    ),
     t0: int = typer.Option(
         10,
         min=1,
-        help="Scheduler T_0 (epochs before first restart) for CosineAnnealingWarmRestarts",
+        help="Scheduler T_0 for warm-restart",
     ),
     t_mult: int = typer.Option(
         2,
         min=1,
-        help="Scheduler T_mult (restart period multiplier) for CosineAnnealingWarmRestarts",
+        help="Scheduler T_mult for warm-restart",
     ),
     eta_min: float = typer.Option(
         1e-6,
         min=0.0,
-        help="Scheduler minimum learning rate for CosineAnnealingWarmRestarts",
+        help="Scheduler minimum learning rate",
+    ),
+    warmup_epochs: int = typer.Option(
+        0,
+        min=0,
+        help="Linear warmup epochs for warmup-cosine",
+    ),
+    warmup_start_factor: float = typer.Option(
+        0.1,
+        help="Initial LR factor for warmup-cosine; must be in (0, 1]",
     ),
     grad_clip: float = typer.Option(
         1.0, help="Max grad norm for clipping (passed to clip_grad_norm_)"
@@ -87,6 +100,21 @@ def train(
         print("Error: WANDB_API_KEY env var is required")
         raise typer.Exit(1)
 
+    supported_schedulers = {"warm-restart", "warmup-cosine"}
+    if scheduler not in supported_schedulers:
+        allowed = ", ".join(sorted(supported_schedulers))
+        print(f"Error: Unsupported scheduler '{scheduler}'")
+        print(f"Expected one of: {allowed}")
+        raise typer.Exit(1)
+
+    if scheduler == "warmup-cosine" and warmup_epochs <= 0:
+        print("Error: --warmup-epochs must be greater than zero for warmup-cosine")
+        raise typer.Exit(1)
+
+    if not 0.0 < warmup_start_factor <= 1.0:
+        print("Error: --warmup-start-factor must be in the range (0, 1]")
+        raise typer.Exit(1)
+
     from libs.paths import checkpoint_path
 
     # Check checkpoint exists
@@ -106,9 +134,12 @@ def train(
         batch_size=batch,
         lr=lr,
         wd=wd,
+        scheduler=scheduler,
         t0=t0,
         t_mult=t_mult,
         eta_min=eta_min,
+        warmup_epochs=warmup_epochs,
+        warmup_start_factor=warmup_start_factor,
         grad_clip=grad_clip,
         resume=resume,
         train_workers=train_workers,

@@ -3,6 +3,7 @@ import torch
 from libs.dataset import ChessEvaluationDataset
 from libs.model import ValueOnlyModel
 from libs.paths import TRAIN_DATA_PATH, VALIDATION_DATA_PATH, checkpoint_path
+from train.schedulers import SCHEDULER_WARM_RESTART, SCHEDULER_WARMUP_COSINE
 from train.trainer import Trainer
 
 
@@ -19,9 +20,12 @@ def run_training(
     batch_size: int,
     lr: float,
     wd: float,
+    scheduler: str,
     t0: int,
     t_mult: int,
     eta_min: float,
+    warmup_epochs: int,
+    warmup_start_factor: float,
     grad_clip: float,
     resume: bool,
     train_workers: int = 4,
@@ -50,9 +54,18 @@ def run_training(
         f"[✓] Hyperparameters: epochs={epochs}, steps={steps_per_epoch}, batch={batch_size}"
     )
     print(f"[✓] Optimizer: lr={lr}, wd={wd}")
-    print(
-        f"[✓] Scheduler: CosineAnnealingWarmRestarts (T0={t0}, T_mult={t_mult}, eta_min={eta_min})"
-    )
+    if scheduler == SCHEDULER_WARM_RESTART:
+        print(
+            f"[✓] Scheduler: warm-restart (T0={t0}, T_mult={t_mult}, eta_min={eta_min})"
+        )
+    elif scheduler == SCHEDULER_WARMUP_COSINE:
+        print(
+            "[✓] Scheduler: warmup-cosine "
+            f"(warmup_epochs={warmup_epochs}, "
+            f"warmup_start_factor={warmup_start_factor}, eta_min={eta_min})"
+        )
+    else:
+        raise ValueError(f"Unsupported scheduler: {scheduler}")
     print(f"[✓] Grad clip: {grad_clip}")
     print(
         f"[✓] DataLoader workers: train={train_workers}, val={val_workers} | Upload checkpoints: {upload_checkpoints}"
@@ -65,9 +78,12 @@ def run_training(
         experiment_name=experiment_name,
         lr=lr,
         wd=wd,
+        scheduler_name=scheduler,
         t0=t0,
         t_mult=t_mult,
         eta_min=eta_min,
+        warmup_epochs=warmup_epochs,
+        warmup_start_factor=warmup_start_factor,
         epochs=epochs,
         steps_per_epoch=steps_per_epoch,
         batch_size=batch_size,

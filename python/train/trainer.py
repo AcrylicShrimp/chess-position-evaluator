@@ -8,6 +8,7 @@ import wandb
 from tqdm import tqdm
 
 from libs.model import ValueOnlyModel
+from train.schedulers import create_scheduler
 
 
 class Trainer:
@@ -18,9 +19,12 @@ class Trainer:
         experiment_name: str,
         lr: float,
         wd: float,
+        scheduler_name: str,
         t0: int,
         t_mult: int,
         eta_min: float,
+        warmup_epochs: int,
+        warmup_start_factor: float,
         epochs: int,
         steps_per_epoch: int,
         batch_size: int,
@@ -42,8 +46,15 @@ class Trainer:
         )
 
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            self.optimizer, T_0=t0, T_mult=t_mult, eta_min=eta_min
+        self.scheduler = create_scheduler(
+            self.optimizer,
+            scheduler_name,
+            t0=t0,
+            t_mult=t_mult,
+            eta_min=eta_min,
+            epochs=epochs,
+            warmup_epochs=warmup_epochs,
+            warmup_start_factor=warmup_start_factor,
         )
         self.grad_scaler = torch.amp.GradScaler(enabled=self.enable_grad_scaler)
 
@@ -69,10 +80,12 @@ class Trainer:
             config={
                 "lr": lr,
                 "wd": wd,
-                "scheduler": "CosineAnnealingWarmRestarts",
+                "scheduler": scheduler_name,
                 "scheduler_t0": t0,
                 "scheduler_t_mult": t_mult,
                 "scheduler_eta_min": eta_min,
+                "scheduler_warmup_epochs": warmup_epochs,
+                "scheduler_warmup_start_factor": warmup_start_factor,
                 "epochs": epochs,
                 "steps_per_epoch": steps_per_epoch,
                 "batch_size": batch_size,
@@ -241,7 +254,7 @@ class Trainer:
 
                 print(f"[✓] Validation Loss: {avg_validation_loss:.4f}")
 
-                # Step cosine scheduler per epoch
+                # Step epoch-level scheduler for the next epoch.
                 self.scheduler.step(epoch + 1)
 
                 if is_best_validation_loss:

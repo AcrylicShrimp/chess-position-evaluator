@@ -144,6 +144,21 @@ uv run cpe train my-experiment \
   --wd 0.0001
 ```
 
+The default scheduler is cosine annealing with warm restarts. To use linear
+warmup followed by cosine decay without restarts:
+
+```bash
+uv run cpe train my-experiment \
+  --epochs 100 \
+  --steps 1024 \
+  --batch 2048 \
+  --lr 0.0005 \
+  --wd 0.0001 \
+  --scheduler warmup-cosine \
+  --warmup-epochs 5 \
+  --eta-min 1e-6
+```
+
 Useful options:
 
 ```bash
