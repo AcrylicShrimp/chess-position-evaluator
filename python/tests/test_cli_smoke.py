@@ -19,6 +19,7 @@ class CliSmokeTest(unittest.TestCase):
         for command in [
             "train",
             "analyze-rank",
+            "analyze-material-labels",
             "eval-dataset",
             "eval",
             "battle",
@@ -44,6 +45,17 @@ class CliSmokeTest(unittest.TestCase):
         self.assertIn("--scheduler", result.output)
         self.assertIn("warmup-cosine", result.output)
         self.assertIn("--warmup-epochs", result.output)
+
+    def test_analyze_material_labels_help_lists_dataset_splits(self):
+        result = CliRunner().invoke(
+            cli_module.app,
+            ["analyze-material-labels", "--help"],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("Dataset split: train,", result.output)
+        self.assertIn("validation, or test", result.output)
+        self.assertIn("--full", result.output)
 
     def test_train_rejects_unknown_model_variant_with_allowed_values(self):
         result = CliRunner().invoke(

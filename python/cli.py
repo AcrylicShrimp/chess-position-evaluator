@@ -4,6 +4,7 @@ Unified CLI for Chess Position Evaluator.
 Usage:
     cpe train <experiment-name> --epochs N --steps N --batch N --lr F --wd F [--resume]
     cpe analyze-rank <model-name>
+    cpe analyze-material-labels
     cpe eval-dataset <model-name>
     cpe eval <model-name>
     cpe battle <model-name>
@@ -177,6 +178,47 @@ def analyze_rank(
     from analyze_rank import run_analyze_rank
 
     run_analyze_rank(model_name)
+
+
+@app.command("analyze-material-labels")
+def analyze_material_labels(
+    split: str = typer.Option(
+        "validation",
+        help="Dataset split: train, validation, or test",
+    ),
+    dataset: Path | None = typer.Option(None, help="Override dataset path"),
+    rows: int | None = typer.Option(
+        None,
+        min=1,
+        help="Analyze the first N rows. Mutually exclusive with --full.",
+    ),
+    full: bool = typer.Option(False, help="Analyze the full dataset split"),
+    batch: int = typer.Option(8192, min=1, help="Analysis batch size"),
+    seed: int = typer.Option(0, help="Recorded sampling seed"),
+    workers: int = typer.Option(
+        0,
+        min=0,
+        help="Number of worker processes for dataset loading",
+    ),
+    output: Path | None = typer.Option(None, help="Report output path"),
+):
+    """Analyze dataset labels against the fixed material-score prior."""
+    from analyze_material_label_calibration import run_material_label_analysis
+
+    try:
+        run_material_label_analysis(
+            split=split,
+            dataset_path=dataset,
+            rows=rows,
+            full=full,
+            batch_size=batch,
+            seed=seed,
+            workers=workers,
+            output_path=output,
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        print(f"Error: {exc}")
+        raise typer.Exit(1) from exc
 
 
 @app.command()
