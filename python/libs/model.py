@@ -9,6 +9,7 @@ _MATERIAL_VALUES = torch.tensor(
     [1.0, 3.0, 3.0, 5.0, 9.0, 0.0], dtype=torch.float32)
 _MATERIAL_ALPHA = 5.0
 _MATERIAL_LOGIT_SCALE = math.log(10.0) / 4.0
+_MATERIAL_FEATURE_COUNT = 3
 
 
 CHANNELS = 256
@@ -163,6 +164,22 @@ def _material_prior_logit(
     return diff * _MATERIAL_LOGIT_SCALE
 
 
+def _material_input_features(
+    x: torch.Tensor,
+    material_diff: torch.Tensor,
+    alpha: float = _MATERIAL_ALPHA,
+) -> torch.Tensor:
+    batch = x.shape[0]
+    diff = material_diff.to(device=x.device, dtype=x.dtype).reshape(batch)
+    signed_material = torch.tanh(diff / alpha)
+    abs_material = torch.tanh(diff.abs() / alpha)
+    material_prior_prob = torch.sigmoid(diff * _MATERIAL_LOGIT_SCALE)
+    return torch.stack(
+        (signed_material, abs_material, material_prior_prob),
+        dim=1,
+    )
+
+
 class AddCoords(torch.nn.Module):
     def __init__(self, height, width):
         super().__init__()
@@ -237,7 +254,8 @@ class NaiveBoardSelfAttention(torch.nn.Module):
         if heads <= 0:
             raise ValueError("board attention requires at least one head")
         if head_dim <= 0:
-            raise ValueError("board attention requires a positive head dimension")
+            raise ValueError(
+                "board attention requires a positive head dimension")
 
         self.channels = channels
         self.heads = heads
@@ -375,7 +393,8 @@ class BoardAttentionFFN(torch.nn.Module):
     def __init__(self, channels: int, hidden: int):
         super().__init__()
         if hidden <= 0:
-            raise ValueError("board attention FFN requires a positive hidden size")
+            raise ValueError(
+                "board attention FFN requires a positive hidden size")
 
         self.net = torch.nn.Sequential(
             torch.nn.Conv2d(channels, hidden, kernel_size=1, bias=False),
@@ -410,7 +429,8 @@ class BoardAttentionStack(torch.nn.Module):
     ):
         super().__init__()
         if layers <= 0:
-            raise ValueError("board attention stack requires at least one layer")
+            raise ValueError(
+                "board attention stack requires at least one layer")
 
         self.layers = torch.nn.ModuleList(
             [
@@ -657,6 +677,34 @@ class ResidualValueHead(torch.nn.Module):
         return self.mlp(out)
 
 
+class MaterialFeatureValueHead(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Sequential(
+            torch.nn.Conv2d(CHANNELS, 2, kernel_size=1, bias=False),
+            torch.nn.BatchNorm2d(2),
+            torch.nn.Hardswish(inplace=True),
+        )
+        self.mlp = torch.nn.Sequential(
+            torch.nn.Linear(2 * 8 * 8 + _MATERIAL_FEATURE_COUNT, 64),
+            torch.nn.Hardswish(inplace=True),
+            torch.nn.Linear(64, 1),
+        )
+
+    def forward(
+        self, x: torch.Tensor, material_diff: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        if material_diff is None:
+            raise ValueError(
+                "MaterialFeatureValueHead requires explicit material_diff")
+
+        material_features = _material_input_features(x, material_diff)
+        out = self.conv(x)
+        out = out.flatten(start_dim=1)
+        out = torch.cat([out, material_features], dim=1)
+        return self.mlp(out)
+
+
 class PolicyHead(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -755,7 +803,7 @@ class ValueOnlyModel(torch.nn.Module):
 
         if model_variant == MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE:
             self.trunk = ParallelCnnAttentionTrunk()
-            self.value_head = ResidualValueHead()
+            self.value_head = MaterialFeatureValueHead()
         else:
             self.blocks = torch.nn.Sequential(
                 *[GhostShuffleBlock(CHANNELS, ratio=4) for _ in range(BLOCKS)],
@@ -776,12 +824,7 @@ class ValueOnlyModel(torch.nn.Module):
 
         if self.model_variant == MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE:
             out = self.trunk(out)
-            residual_logit = self.value_head(out)
-            return residual_logit + _material_prior_logit(
-                material_diff,
-                dtype=residual_logit.dtype,
-                device=residual_logit.device,
-            )
+            return self.value_head(out, material_diff)
 
         out = _run_trunk_blocks(out, self.blocks, self.board_attention)
         return self.value_head(out, material_diff)

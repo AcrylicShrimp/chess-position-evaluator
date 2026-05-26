@@ -5,6 +5,7 @@ Usage:
     cpe train <experiment-name> --epochs N --steps N --batch N --lr F --wd F [--resume]
     cpe analyze-rank <model-name>
     cpe analyze-material-labels
+    cpe analyze-material-signal
     cpe eval-dataset <model-name>
     cpe eval <model-name>
     cpe battle <model-name>
@@ -214,6 +215,40 @@ def analyze_material_labels(
             batch_size=batch,
             seed=seed,
             workers=workers,
+            output_path=output,
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        print(f"Error: {exc}")
+        raise typer.Exit(1) from exc
+
+
+@app.command("analyze-material-signal")
+def analyze_material_signal(
+    split: str = typer.Option(
+        "all",
+        help="Staging split: train, validation, test, or all",
+    ),
+    staging: Path | None = typer.Option(
+        None, help="Override staging DuckDB path"),
+    rows: int | None = typer.Option(
+        None,
+        min=1,
+        help="Analyze the first N staging rows in the split. Mutually exclusive with --full.",
+    ),
+    full: bool = typer.Option(False, help="Analyze the full staging split"),
+    batch: int = typer.Option(20_000, min=1, help="DuckDB fetch batch size"),
+    output: Path | None = typer.Option(None, help="Report output path"),
+):
+    """Analyze source/staging material difference against engine cp targets."""
+    from analyze_material_signal import run_material_signal_analysis
+
+    try:
+        run_material_signal_analysis(
+            split=split,
+            staging_path=staging,
+            rows=rows,
+            full=full,
+            batch_size=batch,
             output_path=output,
         )
     except (FileNotFoundError, RuntimeError, ValueError) as exc:

@@ -69,11 +69,16 @@ class ModelAttentionTest(unittest.TestCase):
         self.assertEqual(attention.heads, 4)
         self.assertEqual(attention.head_dim, 16)
         self.assertEqual(attention.attn_dim, model_module.ATTENTION_DIM)
-        self.assertEqual(attention.q_proj.out_channels, model_module.ATTENTION_DIM)
-        self.assertEqual(attention.k_proj.out_channels, model_module.ATTENTION_DIM)
-        self.assertEqual(attention.v_proj.out_channels, model_module.ATTENTION_DIM)
-        self.assertEqual(attention.out_proj.in_channels, model_module.ATTENTION_DIM)
-        self.assertEqual(attention.scale, model_module.ATTENTION_HEAD_DIM**-0.5)
+        self.assertEqual(attention.q_proj.out_channels,
+                         model_module.ATTENTION_DIM)
+        self.assertEqual(attention.k_proj.out_channels,
+                         model_module.ATTENTION_DIM)
+        self.assertEqual(attention.v_proj.out_channels,
+                         model_module.ATTENTION_DIM)
+        self.assertEqual(attention.out_proj.in_channels,
+                         model_module.ATTENTION_DIM)
+        self.assertEqual(
+            attention.scale, model_module.ATTENTION_HEAD_DIM**-0.5)
 
     def test_board_attention_stack_contract(self):
         stack = model_module.BoardAttentionStack(
@@ -91,7 +96,8 @@ class ModelAttentionTest(unittest.TestCase):
                     layer.attention,
                     model_module.NaiveBoardSelfAttention,
                 )
-                self.assertIsInstance(layer.ffn, model_module.BoardAttentionFFN)
+                self.assertIsInstance(
+                    layer.ffn, model_module.BoardAttentionFFN)
 
     def test_board_attention_stack_is_identity_when_branch_is_zeroed(self):
         stack = model_module.BoardAttentionStack(
@@ -147,7 +153,8 @@ class ModelAttentionTest(unittest.TestCase):
         ]:
             parameter = getattr(attention, name)
             with self.subTest(name=name):
-                self.assertTrue(torch.equal(parameter, torch.zeros_like(parameter)))
+                self.assertTrue(torch.equal(
+                    parameter, torch.zeros_like(parameter)))
 
         self.assertNotIn("rel_bias", dict(attention.named_parameters()))
         self.assertNotIn("dist_bias", dict(attention.named_parameters()))
@@ -214,7 +221,8 @@ class ModelAttentionTest(unittest.TestCase):
         for query, key, expected in cases:
             with self.subTest(query=query, key=key):
                 self.assertEqual(
-                    attention.distance_index_flat[pair_index(query, key)].item(),
+                    attention.distance_index_flat[pair_index(
+                        query, key)].item(),
                     expected,
                 )
                 self.assertEqual(
@@ -284,7 +292,8 @@ class ModelAttentionTest(unittest.TestCase):
             v = attention.v_proj(x).reshape(
                 batch, attention.heads, attention.head_dim, tokens
             ).transpose(2, 3)
-            weights = torch.softmax(torch.matmul(q, k) * attention.scale, dim=-1)
+            weights = torch.softmax(torch.matmul(
+                q, k) * attention.scale, dim=-1)
             context = torch.matmul(weights, v)
             context = context.transpose(2, 3).reshape(
                 batch,
@@ -340,7 +349,8 @@ class ModelAttentionTest(unittest.TestCase):
 
         handles.append(
             model.board_attention.register_forward_hook(
-                lambda _module, _input, _output: call_order.append("board_attention")
+                lambda _module, _input, _output: call_order.append(
+                    "board_attention")
             )
         )
 
@@ -396,7 +406,8 @@ class ModelAttentionTest(unittest.TestCase):
             model.board_attention,
             model_module.IdentityBoardAttention,
         )
-        self.assertEqual(model.model_variant, model_module.MODEL_VARIANT_NO_ATTENTION)
+        self.assertEqual(model.model_variant,
+                         model_module.MODEL_VARIANT_NO_ATTENTION)
         self.assertEqual(sum(p.numel() for p in model.parameters()), 155861)
 
     def test_one_layer_edge_gate_variant_uses_single_attention_layer(self):
@@ -420,7 +431,8 @@ class ModelAttentionTest(unittest.TestCase):
         )
         model.eval()
 
-        self.assertIsInstance(model.trunk, model_module.ParallelCnnAttentionTrunk)
+        self.assertIsInstance(
+            model.trunk, model_module.ParallelCnnAttentionTrunk)
         self.assertEqual(len(model.trunk.shared_blocks), 3)
         self.assertEqual(len(model.trunk.local_blocks), 3)
         self.assertTrue(
@@ -435,11 +447,13 @@ class ModelAttentionTest(unittest.TestCase):
                 for block in model.trunk.local_blocks
             )
         )
-        self.assertIsInstance(model.trunk.global_blocks, model_module.BoardAttentionStack)
+        self.assertIsInstance(model.trunk.global_blocks,
+                              model_module.BoardAttentionStack)
         self.assertEqual(len(model.trunk.global_blocks.layers), 3)
         for layer in model.trunk.global_blocks.layers:
             self.assertEqual(layer.ffn.net[0].out_channels, 64)
-        self.assertIsInstance(model.value_head, model_module.ResidualValueHead)
+        self.assertIsInstance(
+            model.value_head, model_module.MaterialFeatureValueHead)
 
         fuse_conv = model.trunk.fuse[0]
         self.assertIsInstance(fuse_conv, torch.nn.Conv2d)
@@ -455,7 +469,7 @@ class ModelAttentionTest(unittest.TestCase):
         self.assertEqual(output.shape, torch.Size([1, 1]))
         self.assertEqual(
             sum(p.numel() for p in model.parameters()),
-            589205,
+            589397,
         )
 
     def test_supported_model_variants_include_parallel_fusion(self):

@@ -21,7 +21,8 @@ def make_known_material_board() -> torch.Tensor:
 class CaptureValueHead(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.register_buffer("material_weights", model_module._MATERIAL_VALUES.clone())
+        self.register_buffer("material_weights",
+                             model_module._MATERIAL_VALUES.clone())
         self.activation_shape = None
         self.material_diff = None
 
@@ -30,16 +31,6 @@ class CaptureValueHead(torch.nn.Module):
     ) -> torch.Tensor:
         self.activation_shape = x.shape
         self.material_diff = material_diff.detach().cpu().clone()
-        return torch.zeros(x.shape[0], 1, dtype=x.dtype, device=x.device)
-
-
-class ZeroResidualHead(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.activation_shape = None
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        self.activation_shape = x.shape
         return torch.zeros(x.shape[0], 1, dtype=x.dtype, device=x.device)
 
 
@@ -61,8 +52,27 @@ class ModelMaterialFeatureTest(unittest.TestCase):
             model_module._MATERIAL_VALUES,
             material_scale=1.0,
         )
-        expected = torch.tanh(torch.tensor([-4.0, 6.0]) / model_module._MATERIAL_ALPHA)
+        expected = torch.tanh(torch.tensor(
+            [-4.0, 6.0]) / model_module._MATERIAL_ALPHA)
         self.assertTrue(torch.allclose(feature, expected.unsqueeze(1)))
+
+    def test_material_input_features_include_signed_abs_and_prior_probability(self):
+        trunk_activation = torch.zeros(2, model_module.CHANNELS, 8, 8)
+        diff = torch.tensor([-4.0, 6.0])
+
+        features = model_module._material_input_features(
+            trunk_activation, diff)
+
+        expected = torch.stack(
+            (
+                torch.tanh(diff / model_module._MATERIAL_ALPHA),
+                torch.tanh(diff.abs() / model_module._MATERIAL_ALPHA),
+                torch.sigmoid(diff * model_module._MATERIAL_LOGIT_SCALE),
+            ),
+            dim=1,
+        )
+        self.assertEqual(features.shape, torch.Size([2, 3]))
+        self.assertTrue(torch.allclose(features, expected))
 
     def test_material_diff_rejects_trunk_activation_shape(self):
         trunk_activation = torch.zeros(1, model_module.CHANNELS, 8, 8)
@@ -94,7 +104,8 @@ class ModelMaterialFeatureTest(unittest.TestCase):
             capture_head.activation_shape,
             torch.Size([1, model_module.CHANNELS, 8, 8]),
         )
-        self.assertTrue(torch.equal(capture_head.material_diff, torch.tensor([-4.0])))
+        self.assertTrue(torch.equal(
+            capture_head.material_diff, torch.tensor([-4.0])))
 
     def test_explicit_material_diff_overrides_board_material(self):
         model = model_module.ValueOnlyModel()
@@ -103,9 +114,11 @@ class ModelMaterialFeatureTest(unittest.TestCase):
         model.value_head = capture_head
 
         with torch.no_grad():
-            model(make_known_material_board(), material_diff=torch.tensor([7.0]))
+            model(make_known_material_board(),
+                  material_diff=torch.tensor([7.0]))
 
-        self.assertTrue(torch.equal(capture_head.material_diff, torch.tensor([7.0])))
+        self.assertTrue(torch.equal(
+            capture_head.material_diff, torch.tensor([7.0])))
 
     def test_material_prior_logit_uses_fixed_centipawn_scale(self):
         diff = torch.tensor([-4.0, 0.0, 7.0])
@@ -119,24 +132,22 @@ class ModelMaterialFeatureTest(unittest.TestCase):
         expected = diff.reshape(-1, 1) * model_module._MATERIAL_LOGIT_SCALE
         self.assertTrue(torch.allclose(prior, expected))
 
-    def test_parallel_variant_adds_material_prior_to_zero_residual(self):
+    def test_parallel_variant_passes_material_diff_to_feature_head_without_additive_prior(self):
         model = model_module.ValueOnlyModel(
             model_variant=model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,
         )
         model.eval()
-        zero_head = ZeroResidualHead()
-        model.value_head = zero_head
+        capture_head = CaptureValueHead()
+        model.value_head = capture_head
 
         with torch.no_grad():
             output = model(make_known_material_board())
 
-        expected = torch.tensor(
-            [[-4.0 * model_module._MATERIAL_LOGIT_SCALE]],
-            dtype=output.dtype,
-        )
-        self.assertTrue(torch.allclose(output, expected))
+        self.assertTrue(torch.equal(output, torch.zeros_like(output)))
+        self.assertTrue(torch.equal(
+            capture_head.material_diff, torch.tensor([-4.0])))
         self.assertEqual(
-            zero_head.activation_shape,
+            capture_head.activation_shape,
             torch.Size([1, model_module.CHANNELS, 8, 8]),
         )
 
@@ -145,8 +156,8 @@ class ModelMaterialFeatureTest(unittest.TestCase):
             model_variant=model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,
         )
         model.eval()
-        zero_head = ZeroResidualHead()
-        model.value_head = zero_head
+        capture_head = CaptureValueHead()
+        model.value_head = capture_head
 
         with torch.no_grad():
             output = model(
@@ -154,11 +165,9 @@ class ModelMaterialFeatureTest(unittest.TestCase):
                 material_diff=torch.tensor([7.0]),
             )
 
-        expected = torch.tensor(
-            [[7.0 * model_module._MATERIAL_LOGIT_SCALE]],
-            dtype=output.dtype,
-        )
-        self.assertTrue(torch.allclose(output, expected))
+        self.assertTrue(torch.equal(output, torch.zeros_like(output)))
+        self.assertTrue(torch.equal(
+            capture_head.material_diff, torch.tensor([7.0])))
 
     def test_value_only_top_level_material_weights_are_not_checkpoint_state(self):
         model = model_module.ValueOnlyModel(

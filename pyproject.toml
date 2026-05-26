@@ -22,6 +22,7 @@ dependencies = [
     "typer>=0.21.0",
     "python-dotenv>=1.0.1",
     "wandb>=0.23.0",
+    "duckdb>=1.5.3",
 ]
 
 [project.scripts]
@@ -31,6 +32,7 @@ cpe = "cli:app"
 package-dir = { "" = "python" }
 py-modules = [
     "analyze_material_label_calibration",
+    "analyze_material_signal",
     "analyze_rank",
     "cli",
     "eval",
