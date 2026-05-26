@@ -33,6 +33,16 @@ class CaptureValueHead(torch.nn.Module):
         return torch.zeros(x.shape[0], 1, dtype=x.dtype, device=x.device)
 
 
+class ZeroResidualHead(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.activation_shape = None
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        self.activation_shape = x.shape
+        return torch.zeros(x.shape[0], 1, dtype=x.dtype, device=x.device)
+
+
 class ModelMaterialFeatureTest(unittest.TestCase):
     def test_material_diff_uses_board_piece_channels(self):
         board = torch.zeros(2, 20, 8, 8)
@@ -96,6 +106,66 @@ class ModelMaterialFeatureTest(unittest.TestCase):
             model(make_known_material_board(), material_diff=torch.tensor([7.0]))
 
         self.assertTrue(torch.equal(capture_head.material_diff, torch.tensor([7.0])))
+
+    def test_material_prior_logit_uses_fixed_centipawn_scale(self):
+        diff = torch.tensor([-4.0, 0.0, 7.0])
+
+        prior = model_module._material_prior_logit(
+            diff,
+            dtype=torch.float32,
+            device=torch.device("cpu"),
+        )
+
+        expected = diff.reshape(-1, 1) * model_module._MATERIAL_LOGIT_SCALE
+        self.assertTrue(torch.allclose(prior, expected))
+
+    def test_parallel_variant_adds_material_prior_to_zero_residual(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,
+        )
+        model.eval()
+        zero_head = ZeroResidualHead()
+        model.value_head = zero_head
+
+        with torch.no_grad():
+            output = model(make_known_material_board())
+
+        expected = torch.tensor(
+            [[-4.0 * model_module._MATERIAL_LOGIT_SCALE]],
+            dtype=output.dtype,
+        )
+        self.assertTrue(torch.allclose(output, expected))
+        self.assertEqual(
+            zero_head.activation_shape,
+            torch.Size([1, model_module.CHANNELS, 8, 8]),
+        )
+
+    def test_parallel_variant_explicit_material_diff_overrides_board_material(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,
+        )
+        model.eval()
+        zero_head = ZeroResidualHead()
+        model.value_head = zero_head
+
+        with torch.no_grad():
+            output = model(
+                make_known_material_board(),
+                material_diff=torch.tensor([7.0]),
+            )
+
+        expected = torch.tensor(
+            [[7.0 * model_module._MATERIAL_LOGIT_SCALE]],
+            dtype=output.dtype,
+        )
+        self.assertTrue(torch.allclose(output, expected))
+
+    def test_value_only_top_level_material_weights_are_not_checkpoint_state(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,
+        )
+
+        self.assertNotIn("material_weights", model.state_dict())
 
 
 if __name__ == "__main__":

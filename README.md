@@ -162,7 +162,9 @@ uv run cpe train my-experiment \
 The default model variant is `stacked-edge-gate-ffn`. Use `--model-variant
 one-layer-edge-gate` for shallow dynamic edge-gated attention ablations, or
 `--model-variant no-attention` for scheduler or capacity ablations against the
-256-channel non-attention baseline.
+256-channel non-attention baseline. Use `--model-variant parallel-cnn-attn-fuse`
+for the local/global branch experiment with a fixed material-prior logit plus a
+positional residual head.
 
 Useful options:
 
@@ -204,6 +206,14 @@ Input board tensor
        - 1x1 conv path over trunk activations
        - explicit material feature from the original board tensor
        - MLP output logit
+```
+
+The `parallel-cnn-attn-fuse` variant instead splits after three shared ghost
+shuffle blocks into a three-block CNN branch and a three-layer attention+FFN
+branch, fuses them with a 1x1 projection, and outputs:
+
+```text
+value_logit = material_prior_logit + positional_residual_logit
 ```
 
 Input channels:

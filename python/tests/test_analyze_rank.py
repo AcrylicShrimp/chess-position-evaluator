@@ -56,6 +56,71 @@ class AnalyzeRankHooksTest(unittest.TestCase):
             torch.Size([2, 1]),
         )
 
+    def test_register_hooks_supports_parallel_fusion_model_structure(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,
+        )
+        model.eval()
+
+        activations = analyze_rank_module.register_hooks(model)
+        expected_names = {
+            "initial_block",
+            "fuse",
+            "value_head_conv",
+            "value_head_mlp",
+            *[
+                f"shared_block_{index}"
+                for index in range(model_module.ATTENTION_AFTER_BLOCK)
+            ],
+            *[
+                f"local_block_{index}"
+                for index in range(
+                    model_module.BLOCKS - model_module.ATTENTION_AFTER_BLOCK
+                )
+            ],
+            *[
+                f"global_block_{index}"
+                for index in range(model_module.ATTENTION_LAYERS)
+            ],
+        }
+
+        self.assertEqual(set(activations), expected_names)
+
+        with torch.no_grad():
+            model(torch.zeros(2, 20, 8, 8))
+
+        for name in expected_names:
+            self.assertEqual(len(activations[name]), 1)
+
+        self.assertEqual(
+            activations["initial_block"][0].shape,
+            torch.Size([2, model_module.CHANNELS, 8, 8]),
+        )
+        self.assertEqual(
+            activations["shared_block_0"][0].shape,
+            torch.Size([2, model_module.CHANNELS, 8, 8]),
+        )
+        self.assertEqual(
+            activations["local_block_0"][0].shape,
+            torch.Size([2, model_module.CHANNELS, 8, 8]),
+        )
+        self.assertEqual(
+            activations["global_block_0"][0].shape,
+            torch.Size([2, model_module.CHANNELS, 8, 8]),
+        )
+        self.assertEqual(
+            activations["fuse"][0].shape,
+            torch.Size([2, model_module.CHANNELS, 8, 8]),
+        )
+        self.assertEqual(
+            activations["value_head_conv"][0].shape,
+            torch.Size([2, 2, 8, 8]),
+        )
+        self.assertEqual(
+            activations["value_head_mlp"][0].shape,
+            torch.Size([2, 1]),
+        )
+
     def test_validate_input_paths_reports_missing_dataset(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint_path = Path(tmpdir) / "model.pth"

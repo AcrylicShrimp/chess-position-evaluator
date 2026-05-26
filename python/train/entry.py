@@ -1,7 +1,7 @@
 import torch
 
 from libs.dataset import ChessEvaluationDataset
-from libs.model import ValueOnlyModel
+from libs.model import ValueOnlyModel, model_variant_from_checkpoint
 from libs.paths import TRAIN_DATA_PATH, VALIDATION_DATA_PATH, checkpoint_path
 from train.schedulers import SCHEDULER_WARM_RESTART, SCHEDULER_WARMUP_COSINE
 from train.trainer import Trainer
@@ -11,6 +11,29 @@ def worker_init_fn(_: int):
     worker_info = torch.utils.data.get_worker_info()
     if worker_info is not None:
         worker_info.dataset.open_file()
+
+
+def _resolve_model_variant_for_training(
+    model_checkpoint_path,
+    requested_model_variant: str,
+    resume: bool,
+) -> str:
+    if not resume or not model_checkpoint_path.exists():
+        return requested_model_variant
+
+    checkpoint = torch.load(
+        model_checkpoint_path,
+        map_location="cpu",
+        weights_only=False,
+    )
+    checkpoint_model_variant = model_variant_from_checkpoint(checkpoint)
+    if checkpoint_model_variant != requested_model_variant:
+        print(
+            "[✓] Resume checkpoint model variant: "
+            f"{checkpoint_model_variant} "
+            f"(overrides requested {requested_model_variant})"
+        )
+    return checkpoint_model_variant
 
 
 def run_training(
@@ -41,6 +64,11 @@ def run_training(
     validation_data_path = VALIDATION_DATA_PATH
     model_checkpoint_path = checkpoint_path(experiment_name)
     best_checkpoint_path = checkpoint_path(f"{experiment_name}-best")
+    model_variant = _resolve_model_variant_for_training(
+        model_checkpoint_path,
+        model_variant,
+        resume,
+    )
 
     if torch.cuda.is_available():
         device = torch.device("cuda")

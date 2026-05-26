@@ -414,6 +414,56 @@ class ModelAttentionTest(unittest.TestCase):
         )
         self.assertEqual(sum(p.numel() for p in model.parameters()), 223573)
 
+    def test_parallel_cnn_attention_fuse_variant_topology(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,
+        )
+        model.eval()
+
+        self.assertIsInstance(model.trunk, model_module.ParallelCnnAttentionTrunk)
+        self.assertEqual(len(model.trunk.shared_blocks), 3)
+        self.assertEqual(len(model.trunk.local_blocks), 3)
+        self.assertTrue(
+            all(
+                isinstance(block, model_module.GhostShuffleBlock)
+                for block in model.trunk.shared_blocks
+            )
+        )
+        self.assertTrue(
+            all(
+                isinstance(block, model_module.GhostShuffleBlock)
+                for block in model.trunk.local_blocks
+            )
+        )
+        self.assertIsInstance(model.trunk.global_blocks, model_module.BoardAttentionStack)
+        self.assertEqual(len(model.trunk.global_blocks.layers), 3)
+        for layer in model.trunk.global_blocks.layers:
+            self.assertEqual(layer.ffn.net[0].out_channels, 64)
+        self.assertIsInstance(model.value_head, model_module.ResidualValueHead)
+
+        fuse_conv = model.trunk.fuse[0]
+        self.assertIsInstance(fuse_conv, torch.nn.Conv2d)
+        self.assertEqual(fuse_conv.in_channels, model_module.CHANNELS * 2)
+        self.assertEqual(fuse_conv.out_channels, model_module.CHANNELS)
+        self.assertEqual(fuse_conv.kernel_size, (1, 1))
+        self.assertFalse(hasattr(model, "blocks"))
+        self.assertFalse(hasattr(model, "board_attention"))
+
+        with torch.no_grad():
+            output = model(torch.zeros(1, 20, 8, 8))
+
+        self.assertEqual(output.shape, torch.Size([1, 1]))
+        self.assertEqual(
+            sum(p.numel() for p in model.parameters()),
+            589205,
+        )
+
+    def test_supported_model_variants_include_parallel_fusion(self):
+        self.assertIn(
+            model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,
+            model_module.SUPPORTED_MODEL_VARIANTS,
+        )
+
     def test_checkpoint_without_variant_defaults_to_current_model_variant(self):
         self.assertEqual(
             model_module.model_variant_from_checkpoint({}),

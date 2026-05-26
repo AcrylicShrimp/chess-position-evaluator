@@ -40,6 +40,7 @@ class CliSmokeTest(unittest.TestCase):
         self.assertIn("--model-variant", result.output)
         self.assertIn("one-layer-edge-", result.output)
         self.assertIn("no-attention", result.output)
+        self.assertIn("parallel-cnn-", result.output)
         self.assertIn("--scheduler", result.output)
         self.assertIn("warmup-cosine", result.output)
         self.assertIn("--warmup-epochs", result.output)
@@ -70,6 +71,7 @@ class CliSmokeTest(unittest.TestCase):
         self.assertIn("one-layer-edge-gate", result.output)
         self.assertIn("stacked-edge-gate-ffn", result.output)
         self.assertIn("no-attention", result.output)
+        self.assertIn("parallel-cnn-attn-fuse", result.output)
 
 
 if __name__ == "__main__":

@@ -120,13 +120,24 @@ def register_hooks(model: ValueOnlyModel) -> dict:
     # Hook initial_block output
     model.initial_block.register_forward_hook(make_hook("initial_block"))
 
-    # Hook each current trunk block output.
-    for i, block in enumerate(model.blocks):
-        block.register_forward_hook(make_hook(f"block_{i}"))
-        if i + 1 == ATTENTION_AFTER_BLOCK:
-            model.board_attention.register_forward_hook(
-                make_hook("board_attention")
-            )
+    if hasattr(model, "blocks"):
+        # Hook each current sequential trunk block output.
+        for i, block in enumerate(model.blocks):
+            block.register_forward_hook(make_hook(f"block_{i}"))
+            if i + 1 == ATTENTION_AFTER_BLOCK:
+                model.board_attention.register_forward_hook(
+                    make_hook("board_attention")
+                )
+    elif hasattr(model, "trunk"):
+        for i, block in enumerate(model.trunk.shared_blocks):
+            block.register_forward_hook(make_hook(f"shared_block_{i}"))
+        for i, block in enumerate(model.trunk.local_blocks):
+            block.register_forward_hook(make_hook(f"local_block_{i}"))
+        for i, block in enumerate(model.trunk.global_blocks.layers):
+            block.register_forward_hook(make_hook(f"global_block_{i}"))
+        model.trunk.fuse.register_forward_hook(make_hook("fuse"))
+    else:
+        raise ValueError("unsupported model structure for activation rank analysis")
 
     # Hook named value head modules.
     model.value_head.conv.register_forward_hook(make_hook("value_head_conv"))
