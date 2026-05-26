@@ -5,7 +5,7 @@ import random
 import chess
 import torch
 
-from libs.model import ValueOnlyModel
+from libs.model import ValueOnlyModel, model_variant_from_checkpoint
 from libs.paths import checkpoint_path
 from libs.scoring import board2score
 
@@ -54,14 +54,17 @@ def run_battle(model_name: str):
     print(f"[✓] Using device: {device}")
 
     checkpoint_path = resolve_checkpoint_path(model_name)
-    model = ValueOnlyModel()
-    model.to(device)
 
     if not checkpoint_path.exists():
         print(f"Error: {checkpoint_path} not found")
         return
 
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    model_variant = model_variant_from_checkpoint(checkpoint)
+    print(f"[✓] Model variant: {model_variant}")
+
+    model = ValueOnlyModel(model_variant=model_variant)
+    model.to(device)
     model.load_state_dict(checkpoint["model"])
     model.eval()
     print(f"[✓] Model loaded from {checkpoint_path}")

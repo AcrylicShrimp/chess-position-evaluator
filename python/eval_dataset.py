@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Subset
 
 from libs.dataset import ChessEvaluationDataset
-from libs.model import ValueOnlyModel
+from libs.model import ValueOnlyModel, model_variant_from_checkpoint
 from libs.paths import (
     TEST_DATA_PATH,
     TRAIN_DATA_PATH,
@@ -244,6 +244,7 @@ def build_report(
     batch_size: int,
     duration_seconds: float,
     accumulator: EvaluationAccumulator,
+    model_variant: str,
 ) -> dict[str, Any]:
     warnings = []
     if split == "validation":
@@ -253,6 +254,7 @@ def build_report(
         "schema_version": 1,
         "model": {
             "name": model_name,
+            "variant": model_variant,
             "checkpoint_path": str(model_path),
             "checkpoint_epoch": json_safe_number(checkpoint.get("epoch")),
             "checkpoint_best_validation_loss": json_safe_number(
@@ -315,6 +317,7 @@ def run_eval_dataset(
     batch_size: int = DEFAULT_BATCH_SIZE,
     seed: int = 0,
     device_name: str = "auto",
+    model_variant: str | None = None,
     output_path: Path | None = None,
 ) -> dict[str, Any]:
     if batch_size <= 0:
@@ -344,7 +347,10 @@ def run_eval_dataset(
         map_location=device,
         weights_only=False,
     )
-    model = ValueOnlyModel()
+    resolved_model_variant = model_variant or model_variant_from_checkpoint(checkpoint)
+    print(f"Model variant: {resolved_model_variant}")
+
+    model = ValueOnlyModel(model_variant=resolved_model_variant)
     model.load_state_dict(checkpoint["model"])
     model.to(device)
     model.eval()
@@ -387,6 +393,7 @@ def run_eval_dataset(
         batch_size=batch_size,
         duration_seconds=duration_seconds,
         accumulator=accumulator,
+        model_variant=resolved_model_variant,
     )
     write_report(report, resolved_output_path)
 

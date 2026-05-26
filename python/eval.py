@@ -2,7 +2,7 @@ import chess
 import torch
 
 from libs.encoding import board2tensor
-from libs.model import ValueOnlyModel
+from libs.model import ValueOnlyModel, model_variant_from_checkpoint
 from libs.paths import checkpoint_path
 
 
@@ -25,10 +25,12 @@ def run_eval(model_name: str):
         print(f"Error: {model_path} not found")
         return
 
-    model = ValueOnlyModel()
-    model.to(device)
-
     checkpoint = torch.load(model_path, map_location=device)
+    model_variant = model_variant_from_checkpoint(checkpoint)
+    print(f"[✓] Model variant: {model_variant}")
+
+    model = ValueOnlyModel(model_variant=model_variant)
+    model.to(device)
     model.load_state_dict(checkpoint["model"])
     model.eval()
     print(f"[✓] Model loaded from {model_path}")

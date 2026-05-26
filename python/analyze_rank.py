@@ -17,7 +17,11 @@ import torch
 from torch.utils.data import DataLoader
 
 from libs.dataset import ChessEvaluationDataset
-from libs.model import ATTENTION_AFTER_BLOCK, ValueOnlyModel
+from libs.model import (
+    ATTENTION_AFTER_BLOCK,
+    ValueOnlyModel,
+    model_variant_from_checkpoint,
+)
 from libs.paths import VALIDATION_DATA_PATH, checkpoint_path
 
 
@@ -52,9 +56,11 @@ def run_analyze_rank(model_name: str):
     print()
 
     # Load model
-    model = ValueOnlyModel()
     checkpoint = torch.load(
         model_path, map_location=device, weights_only=False)
+    model_variant = model_variant_from_checkpoint(checkpoint)
+    print(f"Model variant: {model_variant}")
+    model = ValueOnlyModel(model_variant=model_variant)
     model.load_state_dict(checkpoint["model"])
     model.to(device)
     model.eval()

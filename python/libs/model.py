@@ -11,6 +11,12 @@ _MATERIAL_ALPHA = 5.0
 CHANNELS = 256
 BLOCKS = 6
 ATTENTION_AFTER_BLOCK = 3
+MODEL_VARIANT_STACKED_EDGE_GATE_FFN = "stacked-edge-gate-ffn"
+MODEL_VARIANT_NO_ATTENTION = "no-attention"
+SUPPORTED_MODEL_VARIANTS = (
+    MODEL_VARIANT_STACKED_EDGE_GATE_FFN,
+    MODEL_VARIANT_NO_ATTENTION,
+)
 ATTENTION_HEADS = 4
 ATTENTION_HEAD_DIM = 16
 ATTENTION_DIM = ATTENTION_HEADS * ATTENTION_HEAD_DIM
@@ -402,6 +408,34 @@ class BoardAttentionStack(torch.nn.Module):
         return x
 
 
+class IdentityBoardAttention(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x
+
+
+def build_board_attention(model_variant: str) -> torch.nn.Module:
+    if model_variant == MODEL_VARIANT_STACKED_EDGE_GATE_FFN:
+        return BoardAttentionStack(
+            ATTENTION_LAYERS,
+            CHANNELS,
+            ATTENTION_HEADS,
+            ATTENTION_HEAD_DIM,
+            ATTENTION_FFN_HIDDEN,
+        )
+
+    if model_variant == MODEL_VARIANT_NO_ATTENTION:
+        return IdentityBoardAttention()
+
+    allowed = ", ".join(SUPPORTED_MODEL_VARIANTS)
+    raise ValueError(
+        f"unsupported model variant {model_variant!r}; expected one of: {allowed}"
+    )
+
+
+def model_variant_from_checkpoint(checkpoint: dict) -> str:
+    return checkpoint.get("model_variant", MODEL_VARIANT_STACKED_EDGE_GATE_FFN)
+
+
 class GhostModule(torch.nn.Module):
     def __init__(
         self, inp, oup, kernel_size=1, ratio=2, dw_size=3, stride=1, relu=True
@@ -557,8 +591,9 @@ class PolicyHead(torch.nn.Module):
 
 
 class ModelFull(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, model_variant: str = MODEL_VARIANT_STACKED_EDGE_GATE_FFN):
         super().__init__()
+        self.model_variant = model_variant
         self.add_coords = AddCoords(8, 8)
         self.initial_block = torch.nn.Sequential(
             torch.nn.Conv2d(24, CHANNELS, kernel_size=3,
@@ -570,13 +605,7 @@ class ModelFull(torch.nn.Module):
         self.blocks = torch.nn.Sequential(
             *[GhostShuffleBlock(CHANNELS, ratio=4) for _ in range(BLOCKS)],
         )
-        self.board_attention = BoardAttentionStack(
-            ATTENTION_LAYERS,
-            CHANNELS,
-            ATTENTION_HEADS,
-            ATTENTION_HEAD_DIM,
-            ATTENTION_FFN_HIDDEN,
-        )
+        self.board_attention = build_board_attention(model_variant)
 
         self.value_head = ValueHead()
         self.policy_head = PolicyHead()
@@ -621,8 +650,9 @@ class ModelFull(torch.nn.Module):
 
 
 class ValueOnlyModel(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, model_variant: str = MODEL_VARIANT_STACKED_EDGE_GATE_FFN):
         super().__init__()
+        self.model_variant = model_variant
 
         self.add_coords = AddCoords(8, 8)
         self.initial_block = torch.nn.Sequential(
@@ -635,13 +665,7 @@ class ValueOnlyModel(torch.nn.Module):
         self.blocks = torch.nn.Sequential(
             *[GhostShuffleBlock(CHANNELS, ratio=4) for _ in range(BLOCKS)],
         )
-        self.board_attention = BoardAttentionStack(
-            ATTENTION_LAYERS,
-            CHANNELS,
-            ATTENTION_HEADS,
-            ATTENTION_HEAD_DIM,
-            ATTENTION_FFN_HIDDEN,
-        )
+        self.board_attention = build_board_attention(model_variant)
 
         self.value_head = ValueHead()
 

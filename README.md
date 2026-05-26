@@ -159,6 +159,10 @@ uv run cpe train my-experiment \
   --eta-min 1e-6
 ```
 
+The default model variant is `stacked-edge-gate-ffn`. Use `--model-variant
+no-attention` for scheduler or capacity ablations against the 256-channel
+non-attention baseline.
+
 Useful options:
 
 ```bash

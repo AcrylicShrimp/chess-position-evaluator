@@ -137,6 +137,7 @@ class EvaluationReportContractTest(unittest.TestCase):
             batch_size=4,
             duration_seconds=1.25,
             accumulator=accumulator,
+            model_variant="stacked-edge-gate-ffn",
         )
 
         self.assertEqual(
@@ -152,6 +153,7 @@ class EvaluationReportContractTest(unittest.TestCase):
             ],
         )
         self.assertIsNone(report["model"]["checkpoint_best_validation_loss"])
+        self.assertEqual(report["model"]["variant"], "stacked-edge-gate-ffn")
         self.assertIn(
             "validation_split_is_model_selection_data",
             report["warnings"],
@@ -178,9 +180,11 @@ class EvaluationReportContractTest(unittest.TestCase):
             batch_size=1,
             duration_seconds=0.0,
             accumulator=accumulator,
+            model_variant="no-attention",
         )
 
         self.assertEqual(report["warnings"], [])
+        self.assertEqual(report["model"]["variant"], "no-attention")
 
     def test_write_report_emits_strict_json(self):
         accumulator = eval_dataset.EvaluationAccumulator()
@@ -202,6 +206,7 @@ class EvaluationReportContractTest(unittest.TestCase):
             batch_size=1,
             duration_seconds=0.0,
             accumulator=accumulator,
+            model_variant="stacked-edge-gate-ffn",
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:

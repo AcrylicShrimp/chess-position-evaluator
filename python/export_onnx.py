@@ -16,7 +16,7 @@ import onnx
 import onnxruntime as ort
 import torch
 
-from libs.model import ValueOnlyModel
+from libs.model import ValueOnlyModel, model_variant_from_checkpoint
 from libs.paths import ONNX_DIR, checkpoint_path, onnx_path
 
 
@@ -47,8 +47,10 @@ def run_export_onnx(model_name: str):
 
     # Load model
     print(f"[1/4] Loading model from {input_path}")
-    model = ValueOnlyModel()
     checkpoint = torch.load(input_path, map_location="cpu", weights_only=False)
+    model_variant = model_variant_from_checkpoint(checkpoint)
+    print(f"      Model variant: {model_variant}")
+    model = ValueOnlyModel(model_variant=model_variant)
     model.load_state_dict(checkpoint["model"])
     model.eval()
 

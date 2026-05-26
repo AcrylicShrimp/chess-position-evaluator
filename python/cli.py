@@ -40,6 +40,10 @@ def train(
     batch: int = typer.Option(..., help="Batch size"),
     lr: float = typer.Option(..., help="Learning rate"),
     wd: float = typer.Option(..., help="Weight decay"),
+    model_variant: str = typer.Option(
+        "stacked-edge-gate-ffn",
+        help="Model variant: stacked-edge-gate-ffn or no-attention",
+    ),
     scheduler: str = typer.Option(
         "warm-restart",
         help="Scheduler: warm-restart or warmup-cosine",
@@ -95,6 +99,13 @@ def train(
         print("Must match pattern: [A-Za-z0-9_-]+")
         raise typer.Exit(1)
 
+    supported_model_variants = {"stacked-edge-gate-ffn", "no-attention"}
+    if model_variant not in supported_model_variants:
+        allowed = ", ".join(sorted(supported_model_variants))
+        print(f"Error: Unsupported model variant '{model_variant}'")
+        print(f"Expected one of: {allowed}")
+        raise typer.Exit(1)
+
     # Check WANDB_API_KEY
     if not os.environ.get("WANDB_API_KEY"):
         print("Error: WANDB_API_KEY env var is required")
@@ -129,6 +140,7 @@ def train(
 
     run_training(
         experiment_name=experiment_name,
+        model_variant=model_variant,
         epochs=epochs,
         steps_per_epoch=steps,
         batch_size=batch,
@@ -188,6 +200,10 @@ def eval_dataset(
     batch: int = typer.Option(4096, min=1, help="Evaluation batch size"),
     seed: int = typer.Option(0, help="Recorded sampling seed"),
     device: str = typer.Option("auto", help="Device: auto, cpu, cuda, or mps"),
+    model_variant: str | None = typer.Option(
+        None,
+        help="Override checkpoint model variant",
+    ),
     output: Path | None = typer.Option(None, help="Report output path"),
 ):
     """Evaluate a checkpoint against a processed dataset split."""
@@ -203,6 +219,7 @@ def eval_dataset(
             batch_size=batch,
             seed=seed,
             device_name=device,
+            model_variant=model_variant,
             output_path=output,
         )
     except (FileNotFoundError, RuntimeError, ValueError) as exc:

@@ -15,6 +15,7 @@ def worker_init_fn(_: int):
 
 def run_training(
     experiment_name: str,
+    model_variant: str,
     epochs: int,
     steps_per_epoch: int,
     batch_size: int,
@@ -50,6 +51,7 @@ def run_training(
 
     print(f"[✓] Using device: {device}")
     print(f"[✓] Experiment: {experiment_name}")
+    print(f"[✓] Model variant: {model_variant}")
     print(
         f"[✓] Hyperparameters: epochs={epochs}, steps={steps_per_epoch}, batch={batch_size}"
     )
@@ -71,11 +73,12 @@ def run_training(
         f"[✓] DataLoader workers: train={train_workers}, val={val_workers} | Upload checkpoints: {upload_checkpoints}"
     )
 
-    model = ValueOnlyModel()
+    model = ValueOnlyModel(model_variant=model_variant)
     trainer = Trainer(
         model=model,
         device=device,
         experiment_name=experiment_name,
+        model_variant=model_variant,
         lr=lr,
         wd=wd,
         scheduler_name=scheduler,

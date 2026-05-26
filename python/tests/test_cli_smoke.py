@@ -37,6 +37,8 @@ class CliSmokeTest(unittest.TestCase):
         result = CliRunner().invoke(cli_module.app, ["train", "--help"])
 
         self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("--model-variant", result.output)
+        self.assertIn("no-attention", result.output)
         self.assertIn("--scheduler", result.output)
         self.assertIn("warmup-cosine", result.output)
         self.assertIn("--warmup-epochs", result.output)

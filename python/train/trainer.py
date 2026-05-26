@@ -17,6 +17,7 @@ class Trainer:
         model: ValueOnlyModel,
         device: torch.device,
         experiment_name: str,
+        model_variant: str,
         lr: float,
         wd: float,
         scheduler_name: str,
@@ -34,6 +35,7 @@ class Trainer:
         self.model = model
         self.device = device
         self.experiment_name = experiment_name
+        self.model_variant = model_variant
         self.upload_checkpoints = upload_checkpoints
         self.enable_autocast = device.type != "cpu"
         self.autocast_dtype = (
@@ -80,6 +82,7 @@ class Trainer:
             config={
                 "lr": lr,
                 "wd": wd,
+                "model_variant": model_variant,
                 "scheduler": scheduler_name,
                 "scheduler_t0": t0,
                 "scheduler_t_mult": t_mult,
@@ -125,6 +128,7 @@ class Trainer:
                 "grad_scaler": self.grad_scaler.state_dict(),
                 "best_validation_loss": self.best_validation_loss,
                 "epoch": epoch,
+                "model_variant": self.model_variant,
             },
             checkpoint_path,
         )
