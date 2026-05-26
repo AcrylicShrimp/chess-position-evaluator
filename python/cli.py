@@ -42,7 +42,10 @@ def train(
     wd: float = typer.Option(..., help="Weight decay"),
     model_variant: str = typer.Option(
         "stacked-edge-gate-ffn",
-        help="Model variant: stacked-edge-gate-ffn or no-attention",
+        help=(
+            "Model variant: stacked-edge-gate-ffn, one-layer-edge-gate, "
+            "or no-attention"
+        ),
     ),
     scheduler: str = typer.Option(
         "warm-restart",
@@ -99,7 +102,11 @@ def train(
         print("Must match pattern: [A-Za-z0-9_-]+")
         raise typer.Exit(1)
 
-    supported_model_variants = {"stacked-edge-gate-ffn", "no-attention"}
+    supported_model_variants = {
+        "stacked-edge-gate-ffn",
+        "one-layer-edge-gate",
+        "no-attention",
+    }
     if model_variant not in supported_model_variants:
         allowed = ", ".join(sorted(supported_model_variants))
         print(f"Error: Unsupported model variant '{model_variant}'")

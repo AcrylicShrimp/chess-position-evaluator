@@ -160,8 +160,9 @@ uv run cpe train my-experiment \
 ```
 
 The default model variant is `stacked-edge-gate-ffn`. Use `--model-variant
-no-attention` for scheduler or capacity ablations against the 256-channel
-non-attention baseline.
+one-layer-edge-gate` for shallow dynamic edge-gated attention ablations, or
+`--model-variant no-attention` for scheduler or capacity ablations against the
+256-channel non-attention baseline.
 
 Useful options:
 

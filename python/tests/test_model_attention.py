@@ -399,6 +399,21 @@ class ModelAttentionTest(unittest.TestCase):
         self.assertEqual(model.model_variant, model_module.MODEL_VARIANT_NO_ATTENTION)
         self.assertEqual(sum(p.numel() for p in model.parameters()), 155861)
 
+    def test_one_layer_edge_gate_variant_uses_single_attention_layer(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=model_module.MODEL_VARIANT_ONE_LAYER_EDGE_GATE,
+        )
+
+        self.assertIsInstance(
+            model.board_attention,
+            model_module.NaiveBoardSelfAttention,
+        )
+        self.assertEqual(
+            model.model_variant,
+            model_module.MODEL_VARIANT_ONE_LAYER_EDGE_GATE,
+        )
+        self.assertEqual(sum(p.numel() for p in model.parameters()), 223573)
+
     def test_checkpoint_without_variant_defaults_to_current_model_variant(self):
         self.assertEqual(
             model_module.model_variant_from_checkpoint({}),

@@ -12,9 +12,11 @@ CHANNELS = 256
 BLOCKS = 6
 ATTENTION_AFTER_BLOCK = 3
 MODEL_VARIANT_STACKED_EDGE_GATE_FFN = "stacked-edge-gate-ffn"
+MODEL_VARIANT_ONE_LAYER_EDGE_GATE = "one-layer-edge-gate"
 MODEL_VARIANT_NO_ATTENTION = "no-attention"
 SUPPORTED_MODEL_VARIANTS = (
     MODEL_VARIANT_STACKED_EDGE_GATE_FFN,
+    MODEL_VARIANT_ONE_LAYER_EDGE_GATE,
     MODEL_VARIANT_NO_ATTENTION,
 )
 ATTENTION_HEADS = 4
@@ -421,6 +423,13 @@ def build_board_attention(model_variant: str) -> torch.nn.Module:
             ATTENTION_HEADS,
             ATTENTION_HEAD_DIM,
             ATTENTION_FFN_HIDDEN,
+        )
+
+    if model_variant == MODEL_VARIANT_ONE_LAYER_EDGE_GATE:
+        return NaiveBoardSelfAttention(
+            CHANNELS,
+            ATTENTION_HEADS,
+            ATTENTION_HEAD_DIM,
         )
 
     if model_variant == MODEL_VARIANT_NO_ATTENTION:
