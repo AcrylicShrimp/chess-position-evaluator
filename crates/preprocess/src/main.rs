@@ -2,6 +2,7 @@ mod write_chesseval;
 
 use crate::write_chesseval::centipawn_to_win_prob;
 use duckdb::{Connection, params};
+use std::env;
 
 const DUCKDB_TEMP_PATH: &str = "data/interim/lichess_db_eval.duckdb.tmp";
 const CHESS_EVALUATION_DB_PATH: &str = "data/raw/lichess_db_eval.jsonl";
@@ -14,6 +15,12 @@ const VALIDATION_SET_RATIO: f64 = 0.05;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+    let args = env::args().skip(1).collect::<Vec<_>>();
+    if matches!(args.first().map(String::as_str), Some("diagnose")) {
+        run_diagnose(&args[1..])?;
+        return Ok(());
+    }
+
     tokio::fs::create_dir_all("data/interim").await?;
     tokio::fs::create_dir_all("data/processed").await?;
 
@@ -48,34 +55,128 @@ async fn main() -> Result<(), anyhow::Error> {
     drop(conn);
 
     println!("writing train set to {TRAIN_CHESSEVAL_PATH}");
-    let train_rows_written =
+    let train_report =
         write_chesseval::write_chesseval(DUCKDB_TEMP_PATH, TRAIN_CHESSEVAL_PATH, 0, train_set_size)
             .await?;
-    println!("train rows written: {train_rows_written}");
+    println!("train rows written: {}", train_report.rows_written);
+    print_validation_stats("train", &train_report.validation);
 
     println!("writing validation set to {VALIDATION_CHESSEVAL_PATH}");
-    let validation_rows_written = write_chesseval::write_chesseval(
+    let validation_report = write_chesseval::write_chesseval(
         DUCKDB_TEMP_PATH,
         VALIDATION_CHESSEVAL_PATH,
         validation_offset,
         validation_set_size,
     )
     .await?;
-    println!("validation rows written: {validation_rows_written}");
+    println!(
+        "validation rows written: {}",
+        validation_report.rows_written
+    );
+    print_validation_stats("validation", &validation_report.validation);
 
     println!("writing test set to {TEST_CHESSEVAL_PATH}");
-    let test_rows_written = write_chesseval::write_chesseval(
+    let test_report = write_chesseval::write_chesseval(
         DUCKDB_TEMP_PATH,
         TEST_CHESSEVAL_PATH,
         test_offset,
         test_set_size,
     )
     .await?;
-    println!("test rows written: {test_rows_written}");
+    println!("test rows written: {}", test_report.rows_written);
+    print_validation_stats("test", &test_report.validation);
 
     println!("done");
 
     Ok(())
+}
+
+fn run_diagnose(args: &[String]) -> Result<(), anyhow::Error> {
+    let split = args.first().map(String::as_str).unwrap_or("validation");
+    let limit = match args.get(1) {
+        Some(value) => value.parse::<i64>()?,
+        None => 1_000_000,
+    };
+    let example_limit = match args.get(2) {
+        Some(value) => value.parse::<usize>()?,
+        None => 5,
+    };
+
+    let conn = Connection::open(DUCKDB_TEMP_PATH)?;
+    let row_count = conn.query_row::<i64, _, _>("SELECT COUNT(*) FROM rows", params![], |row| {
+        row.get::<_, i64>(0)
+    })?;
+    drop(conn);
+
+    let dataset_size = (row_count as f64 * DATASET_RATIO) as i64;
+    let train_set_size = (dataset_size as f64 * TRAIN_SET_RATIO) as i64;
+    let validation_set_size = (dataset_size as f64 * VALIDATION_SET_RATIO) as i64;
+    let test_set_size = dataset_size - train_set_size - validation_set_size;
+    let validation_offset = train_set_size;
+    let test_offset = train_set_size + validation_set_size;
+
+    let (offset, window_size) = match split {
+        "train" => (0, train_set_size),
+        "validation" => (validation_offset, validation_set_size),
+        "test" => (test_offset, test_set_size),
+        "all" => (0, dataset_size),
+        _ => anyhow::bail!("unsupported split for diagnose: {split}"),
+    };
+    let effective_limit = limit.min(window_size).max(0);
+
+    println!("diagnosing split: {split}");
+    println!("source rows total: {row_count}");
+    println!("source window offset: {offset}");
+    println!("source window size: {window_size}");
+    println!("diagnostic limit: {effective_limit}");
+
+    let (validation, examples) = write_chesseval::diagnose_source_rows(
+        DUCKDB_TEMP_PATH,
+        offset,
+        effective_limit,
+        example_limit,
+    )?;
+    print_validation_stats(split, &validation);
+
+    if !examples.is_empty() {
+        println!("invalid examples:");
+        for (index, example) in examples.iter().enumerate() {
+            println!(
+                "  {}. reason={} cp={} fen={}",
+                index + 1,
+                example.reason,
+                example.cp,
+                example.fen
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn print_validation_stats(label: &str, stats: &write_chesseval::PositionValidationStats) {
+    let total = stats.total();
+    let rejected = stats.rejected();
+    let rejected_ratio = if total == 0 {
+        0.0
+    } else {
+        rejected as f64 / total as f64 * 100.0
+    };
+
+    println!("{label} validation summary:");
+    println!("  total: {total}");
+    println!("  accepted: {}", stats.accepted);
+    println!("  rejected: {rejected} ({rejected_ratio:.4}%)");
+    println!("  invalid_fen: {}", stats.invalid_fen);
+    println!("  white_king_count: {}", stats.white_king_count);
+    println!("  black_king_count: {}", stats.black_king_count);
+    println!("  white_piece_total: {}", stats.white_piece_total);
+    println!("  black_piece_total: {}", stats.black_piece_total);
+    println!("  white_pawn_count: {}", stats.white_pawn_count);
+    println!("  black_pawn_count: {}", stats.black_pawn_count);
+    println!("  white_pawn_back_rank: {}", stats.white_pawn_back_rank);
+    println!("  black_pawn_back_rank: {}", stats.black_pawn_back_rank);
+    println!("  overlapping_occupancy: {}", stats.overlapping_occupancy);
 }
 
 async fn remove_existing_file(path: &str) -> Result<(), anyhow::Error> {
