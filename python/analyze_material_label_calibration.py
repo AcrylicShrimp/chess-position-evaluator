@@ -459,6 +459,8 @@ class MaterialLabelAccumulator:
         pawn_count_mask = (
             our_pieces[:, 0].sum(dim=(1, 2)) > 8.0
         ) | (their_pieces[:, 0].sum(dim=(1, 2)) > 8.0)
+        # Project data policy treats extreme promoted-material positions as
+        # out-of-distribution for practical training, even if some are legal.
         material_abs_mask = material_diff.abs() > 39.0
         invalid_mask = (
             overlap_mask

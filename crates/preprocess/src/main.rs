@@ -177,6 +177,7 @@ fn print_validation_stats(label: &str, stats: &write_chesseval::PositionValidati
     println!("  white_pawn_back_rank: {}", stats.white_pawn_back_rank);
     println!("  black_pawn_back_rank: {}", stats.black_pawn_back_rank);
     println!("  overlapping_occupancy: {}", stats.overlapping_occupancy);
+    println!("  extreme_material: {}", stats.extreme_material);
 }
 
 async fn remove_existing_file(path: &str) -> Result<(), anyhow::Error> {

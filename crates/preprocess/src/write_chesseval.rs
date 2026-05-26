@@ -31,6 +31,7 @@ pub enum PositionRejectReason {
     WhitePawnBackRank,
     BlackPawnBackRank,
     OverlappingOccupancy,
+    ExtremeMaterial,
 }
 
 impl fmt::Display for PositionRejectReason {
@@ -45,6 +46,7 @@ impl fmt::Display for PositionRejectReason {
             PositionRejectReason::WhitePawnBackRank => write!(f, "white_pawn_back_rank"),
             PositionRejectReason::BlackPawnBackRank => write!(f, "black_pawn_back_rank"),
             PositionRejectReason::OverlappingOccupancy => write!(f, "overlapping_occupancy"),
+            PositionRejectReason::ExtremeMaterial => write!(f, "extreme_material"),
         }
     }
 }
@@ -62,6 +64,7 @@ pub struct PositionValidationStats {
     pub white_pawn_back_rank: usize,
     pub black_pawn_back_rank: usize,
     pub overlapping_occupancy: usize,
+    pub extreme_material: usize,
 }
 
 impl PositionValidationStats {
@@ -76,6 +79,7 @@ impl PositionValidationStats {
             + self.white_pawn_back_rank
             + self.black_pawn_back_rank
             + self.overlapping_occupancy
+            + self.extreme_material
     }
 
     pub fn total(&self) -> usize {
@@ -93,6 +97,7 @@ impl PositionValidationStats {
             PositionRejectReason::WhitePawnBackRank => self.white_pawn_back_rank += 1,
             PositionRejectReason::BlackPawnBackRank => self.black_pawn_back_rank += 1,
             PositionRejectReason::OverlappingOccupancy => self.overlapping_occupancy += 1,
+            PositionRejectReason::ExtremeMaterial => self.extreme_material += 1,
         }
     }
 
@@ -108,6 +113,7 @@ impl PositionValidationStats {
         self.white_pawn_back_rank += other.white_pawn_back_rank;
         self.black_pawn_back_rank += other.black_pawn_back_rank;
         self.overlapping_occupancy += other.overlapping_occupancy;
+        self.extreme_material += other.extreme_material;
     }
 }
 
@@ -284,6 +290,7 @@ pub fn standard_position_reject_reasons(board: &Board) -> Vec<PositionRejectReas
 
     validate_color_position(board, Color::White, &mut reasons);
     validate_color_position(board, Color::Black, &mut reasons);
+    validate_material_range(board, &mut reasons);
 
     reasons
 }
@@ -329,6 +336,30 @@ fn validate_color_position(board: &Board, color: Color, reasons: &mut Vec<Positi
             }
         }
     }
+}
+
+fn validate_material_range(board: &Board, reasons: &mut Vec<PositionRejectReason>) {
+    const MAX_ABS_MATERIAL_DIFF: i32 = 39;
+
+    let white_score = material_score(board, Color::White);
+    let black_score = material_score(board, Color::Black);
+    if (white_score - black_score).abs() > MAX_ABS_MATERIAL_DIFF {
+        reasons.push(PositionRejectReason::ExtremeMaterial);
+    }
+}
+
+fn material_score(board: &Board, color: Color) -> i32 {
+    let occupancy = *board.color_combined(color);
+    [
+        (Piece::Pawn, 1),
+        (Piece::Knight, 3),
+        (Piece::Bishop, 3),
+        (Piece::Rook, 5),
+        (Piece::Queen, 9),
+    ]
+    .into_iter()
+    .map(|(piece, value)| bitboard_count(*board.pieces(piece) & occupancy) as i32 * value)
+    .sum()
 }
 
 fn bitboard_count(bitboard: BitBoard) -> u32 {
@@ -586,5 +617,15 @@ mod tests {
         let board = board("4k3/8/8/8/8/8/8/QQ2K3 w - - 0 1");
 
         assert_eq!(validate_standard_position(&board), Ok(()));
+    }
+
+    #[test]
+    fn rejects_extreme_material_advantage() {
+        let board =
+            board("Qnbqkb1r/2pppppp/1p5Q/Q3QQ1Q/QQQQQQQQ/QQQQQQQQ/QQQQQQQQ/QQQQKQQQ b k - 0 1");
+
+        let reasons = standard_position_reject_reasons(&board);
+
+        assert!(reasons.contains(&PositionRejectReason::ExtremeMaterial));
     }
 }
