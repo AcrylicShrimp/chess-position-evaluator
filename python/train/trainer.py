@@ -8,6 +8,7 @@ import wandb
 from tqdm import tqdm
 
 from libs.model import ValueOnlyModel
+from train.compile_modes import SUPPORTED_COMPILE_MODES
 from train.schedulers import create_scheduler
 
 
@@ -30,6 +31,7 @@ class Trainer:
         steps_per_epoch: int,
         batch_size: int,
         grad_clip: float,
+        compile_mode: str,
         upload_checkpoints: bool,
     ):
         self.model = model
@@ -62,9 +64,17 @@ class Trainer:
 
         self.model.to(self.device)
 
-        if self.device.type == "cuda":
-            self.model.compile(mode="reduce-overhead")
-            print("[✓] Model compiled (cuda)")
+        if compile_mode not in SUPPORTED_COMPILE_MODES:
+            allowed = ", ".join(SUPPORTED_COMPILE_MODES)
+            raise ValueError(
+                f"Unsupported compile mode {compile_mode!r}; expected one of: {allowed}"
+            )
+
+        if self.device.type == "cuda" and compile_mode != "none":
+            self.model.compile(mode=compile_mode)
+            print(f"[✓] Model compiled (cuda, mode={compile_mode})")
+        elif self.device.type == "cuda":
+            print("[!] Model compile disabled")
         else:
             print("[!] Model will not be compiled; no cuda device found")
 
@@ -93,6 +103,7 @@ class Trainer:
                 "steps_per_epoch": steps_per_epoch,
                 "batch_size": batch_size,
                 "grad_clip": grad_clip,
+                "compile_mode": compile_mode,
             },
         )
         self.grad_clip = grad_clip

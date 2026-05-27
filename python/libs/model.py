@@ -29,6 +29,7 @@ MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_FUSE_NO_MATERIAL = (
 MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_LATEEVIDENCE_NO_MATERIAL = (
     "parallel-cnn-attn-kedge-lateevidence-no-material"
 )
+MODEL_VARIANT_FUNNEL_CNN_ATTENTION = "funnel-cnn224-160-128-attn6-edgegate"
 SUPPORTED_MODEL_VARIANTS = (
     MODEL_VARIANT_STACKED_EDGE_GATE_FFN,
     MODEL_VARIANT_ONE_LAYER_EDGE_GATE,
@@ -38,6 +39,7 @@ SUPPORTED_MODEL_VARIANTS = (
     MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL,
     MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_FUSE_NO_MATERIAL,
     MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_LATEEVIDENCE_NO_MATERIAL,
+    MODEL_VARIANT_FUNNEL_CNN_ATTENTION,
 )
 EDGE_GATE_QK = "qk"
 EDGE_GATE_Q_ONLY = "q-only"
@@ -47,6 +49,11 @@ ATTENTION_HEAD_DIM = 16
 ATTENTION_DIM = ATTENTION_HEADS * ATTENTION_HEAD_DIM
 ATTENTION_LAYERS = 3
 ATTENTION_FFN_HIDDEN = 64
+FUNNEL_INITIAL_CHANNELS = 224
+FUNNEL_MID_CHANNELS = 160
+FUNNEL_ATTENTION_CHANNELS = 128
+FUNNEL_BLOCKS_PER_STAGE = 2
+FUNNEL_ATTENTION_LAYERS = 6
 BOARD_ATTENTION_SIZE = 8
 BOARD_ATTENTION_RELATIONS = (
     "same_square",
@@ -636,6 +643,67 @@ class ParallelCnnAttentionKEdgeLateEvidenceTrunk(torch.nn.Module):
         return torch.cat([local_evidence, global_evidence], dim=1)
 
 
+class ChannelProjection(torch.nn.Module):
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__()
+        self.net = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                in_channels, out_channels, kernel_size=1, bias=False
+            ),
+            torch.nn.BatchNorm2d(out_channels),
+            torch.nn.Hardswish(inplace=True),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
+
+class FunnelCnnAttentionTrunk(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.wide_blocks = torch.nn.Sequential(
+            *[
+                GhostShuffleBlock(FUNNEL_INITIAL_CHANNELS, ratio=4)
+                for _ in range(FUNNEL_BLOCKS_PER_STAGE)
+            ]
+        )
+        self.compress_wide_to_mid = ChannelProjection(
+            FUNNEL_INITIAL_CHANNELS,
+            FUNNEL_MID_CHANNELS,
+        )
+        self.mid_blocks = torch.nn.Sequential(
+            *[
+                GhostShuffleBlock(FUNNEL_MID_CHANNELS, ratio=4)
+                for _ in range(FUNNEL_BLOCKS_PER_STAGE)
+            ]
+        )
+        self.compress_mid_to_attention = ChannelProjection(
+            FUNNEL_MID_CHANNELS,
+            FUNNEL_ATTENTION_CHANNELS,
+        )
+        self.narrow_blocks = torch.nn.Sequential(
+            *[
+                GhostShuffleBlock(FUNNEL_ATTENTION_CHANNELS, ratio=4)
+                for _ in range(FUNNEL_BLOCKS_PER_STAGE)
+            ]
+        )
+        self.attention_blocks = BoardAttentionStack(
+            FUNNEL_ATTENTION_LAYERS,
+            FUNNEL_ATTENTION_CHANNELS,
+            ATTENTION_HEADS,
+            ATTENTION_HEAD_DIM,
+            ATTENTION_FFN_HIDDEN,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.wide_blocks(x)
+        x = self.compress_wide_to_mid(x)
+        x = self.mid_blocks(x)
+        x = self.compress_mid_to_attention(x)
+        x = self.narrow_blocks(x)
+        return self.attention_blocks(x)
+
+
 def build_board_attention(model_variant: str) -> torch.nn.Module:
     if model_variant == MODEL_VARIANT_STACKED_EDGE_GATE_FFN:
         return BoardAttentionStack(
@@ -774,10 +842,11 @@ def _run_trunk_blocks(
 
 
 class ValueHead(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, channels: int = CHANNELS):
         super().__init__()
+        self.channels = channels
         self.conv = torch.nn.Sequential(
-            torch.nn.Conv2d(CHANNELS, 2, kernel_size=1, bias=False),
+            torch.nn.Conv2d(channels, 2, kernel_size=1, bias=False),
             torch.nn.BatchNorm2d(2),
             torch.nn.Hardswish(inplace=True),
         )
@@ -963,14 +1032,22 @@ class ValueOnlyModel(torch.nn.Module):
         )
 
         self.add_coords = AddCoords(8, 8)
+        initial_channels = (
+            FUNNEL_INITIAL_CHANNELS
+            if model_variant == MODEL_VARIANT_FUNNEL_CNN_ATTENTION
+            else CHANNELS
+        )
         self.initial_block = torch.nn.Sequential(
-            torch.nn.Conv2d(24, CHANNELS, kernel_size=3,
+            torch.nn.Conv2d(24, initial_channels, kernel_size=3,
                             padding=1, bias=False),
-            torch.nn.BatchNorm2d(CHANNELS),
+            torch.nn.BatchNorm2d(initial_channels),
             torch.nn.Hardswish(inplace=True),
         )
 
-        if model_variant == MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE:
+        if model_variant == MODEL_VARIANT_FUNNEL_CNN_ATTENTION:
+            self.trunk = FunnelCnnAttentionTrunk()
+            self.value_head = ValueHead(channels=FUNNEL_ATTENTION_CHANNELS)
+        elif model_variant == MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE:
             self.trunk = ParallelCnnAttentionTrunk()
             self.value_head = MaterialFeatureValueHead()
         elif model_variant == MODEL_VARIANT_PARALLEL_CNN_ATTN_ALIGNED_ADD:
@@ -1017,6 +1094,12 @@ class ValueOnlyModel(torch.nn.Module):
 
         out = self.add_coords(x)
         out = self.initial_block(out)
+
+        if self.model_variant in {
+            MODEL_VARIANT_FUNNEL_CNN_ATTENTION,
+        }:
+            out = self.trunk(out)
+            return self.value_head(out, material_diff)
 
         if self.model_variant in {
             MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL,

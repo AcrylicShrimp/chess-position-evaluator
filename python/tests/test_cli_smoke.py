@@ -48,6 +48,8 @@ class CliSmokeTest(unittest.TestCase):
         self.assertIn("--scheduler", result.output)
         self.assertIn("warmup-cosine", result.output)
         self.assertIn("--warmup-epochs", result.output)
+        self.assertIn("--compile-mode", result.output)
+        self.assertIn("max-autotune", result.output)
 
     def test_analyze_material_labels_help_lists_dataset_splits(self):
         result = CliRunner().invoke(
@@ -132,6 +134,64 @@ class CliSmokeTest(unittest.TestCase):
                       result.output)
         self.assertIn("parallel-cnn-attn-kedge-lateevidence-no-material",
                       result.output)
+        self.assertIn("funnel-cnn224-160-128-attn6-edgegate",
+                      result.output)
+
+    def test_train_rejects_unknown_compile_mode_with_allowed_values(self):
+        result = CliRunner().invoke(
+            cli_module.app,
+            [
+                "train",
+                "example",
+                "--epochs",
+                "1",
+                "--steps",
+                "1",
+                "--batch",
+                "1",
+                "--lr",
+                "0.001",
+                "--wd",
+                "0.0001",
+                "--compile-mode",
+                "turbo",
+            ],
+            env={"WANDB_API_KEY": "test"},
+        )
+
+        self.assertNotEqual(result.exit_code, 0, result.output)
+        self.assertIn("Unsupported compile mode 'turbo'", result.output)
+        self.assertIn("default", result.output)
+        self.assertIn("reduce-overhead", result.output)
+        self.assertIn("max-autotune", result.output)
+        self.assertIn("max-autotune-no-cudagraphs", result.output)
+        self.assertIn("none", result.output)
+
+    def test_train_validates_compile_mode_before_wandb_key(self):
+        result = CliRunner().invoke(
+            cli_module.app,
+            [
+                "train",
+                "example",
+                "--epochs",
+                "1",
+                "--steps",
+                "1",
+                "--batch",
+                "1",
+                "--lr",
+                "0.001",
+                "--wd",
+                "0.0001",
+                "--compile-mode",
+                "turbo",
+            ],
+            env={},
+        )
+
+        self.assertNotEqual(result.exit_code, 0, result.output)
+        self.assertIn("Unsupported compile mode 'turbo'", result.output)
+        self.assertNotIn("WANDB_API_KEY env var is required", result.output)
 
 
 if __name__ == "__main__":

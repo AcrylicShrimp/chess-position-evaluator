@@ -241,6 +241,82 @@ class AnalyzeRankHooksTest(unittest.TestCase):
             torch.Size([2, 1]),
         )
 
+    def test_register_hooks_supports_funnel_attention_model_structure(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=model_module.MODEL_VARIANT_FUNNEL_CNN_ATTENTION,
+        )
+        model.eval()
+
+        activations = analyze_rank_module.register_hooks(model)
+        expected_names = {
+            "initial_block",
+            "compress_wide_to_mid",
+            "compress_mid_to_attention",
+            "value_head_conv",
+            "value_head_mlp",
+            *[
+                f"wide_block_{index}"
+                for index in range(model_module.FUNNEL_BLOCKS_PER_STAGE)
+            ],
+            *[
+                f"mid_block_{index}"
+                for index in range(model_module.FUNNEL_BLOCKS_PER_STAGE)
+            ],
+            *[
+                f"narrow_block_{index}"
+                for index in range(model_module.FUNNEL_BLOCKS_PER_STAGE)
+            ],
+            *[
+                f"attention_block_{index}"
+                for index in range(model_module.FUNNEL_ATTENTION_LAYERS)
+            ],
+        }
+
+        self.assertEqual(set(activations), expected_names)
+
+        with torch.no_grad():
+            model(torch.zeros(2, 20, 8, 8))
+
+        for name in expected_names:
+            self.assertEqual(len(activations[name]), 1)
+
+        self.assertEqual(
+            activations["initial_block"][0].shape,
+            torch.Size([2, model_module.FUNNEL_INITIAL_CHANNELS, 8, 8]),
+        )
+        self.assertEqual(
+            activations["wide_block_0"][0].shape,
+            torch.Size([2, model_module.FUNNEL_INITIAL_CHANNELS, 8, 8]),
+        )
+        self.assertEqual(
+            activations["compress_wide_to_mid"][0].shape,
+            torch.Size([2, model_module.FUNNEL_MID_CHANNELS, 8, 8]),
+        )
+        self.assertEqual(
+            activations["mid_block_0"][0].shape,
+            torch.Size([2, model_module.FUNNEL_MID_CHANNELS, 8, 8]),
+        )
+        self.assertEqual(
+            activations["compress_mid_to_attention"][0].shape,
+            torch.Size([2, model_module.FUNNEL_ATTENTION_CHANNELS, 8, 8]),
+        )
+        self.assertEqual(
+            activations["narrow_block_0"][0].shape,
+            torch.Size([2, model_module.FUNNEL_ATTENTION_CHANNELS, 8, 8]),
+        )
+        self.assertEqual(
+            activations["attention_block_0"][0].shape,
+            torch.Size([2, model_module.FUNNEL_ATTENTION_CHANNELS, 8, 8]),
+        )
+        self.assertEqual(
+            activations["value_head_conv"][0].shape,
+            torch.Size([2, 2, 8, 8]),
+        )
+        self.assertEqual(
+            activations["value_head_mlp"][0].shape,
+            torch.Size([2, 1]),
+        )
+
     def test_validate_input_paths_reports_missing_dataset(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint_path = Path(tmpdir) / "model.pth"

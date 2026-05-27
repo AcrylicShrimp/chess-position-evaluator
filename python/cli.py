@@ -52,7 +52,8 @@ def train(
             "parallel-cnn-attn-aligned-add, or "
             "parallel-cnn-attn-fuse-no-material, or "
             "parallel-cnn-attn-kedge-fuse-no-material, or "
-            "parallel-cnn-attn-kedge-lateevidence-no-material"
+            "parallel-cnn-attn-kedge-lateevidence-no-material, or "
+            "funnel-cnn224-160-128-attn6-edgegate"
         ),
     ),
     scheduler: str = typer.Option(
@@ -85,6 +86,13 @@ def train(
     ),
     grad_clip: float = typer.Option(
         1.0, help="Max grad norm for clipping (passed to clip_grad_norm_)"
+    ),
+    compile_mode: str = typer.Option(
+        "reduce-overhead",
+        help=(
+            "Torch compile mode for CUDA training: default, reduce-overhead, "
+            "max-autotune, max-autotune-no-cudagraphs, or none"
+        ),
     ),
     train_workers: int = typer.Option(
         4,
@@ -119,16 +127,12 @@ def train(
         "parallel-cnn-attn-fuse-no-material",
         "parallel-cnn-attn-kedge-fuse-no-material",
         "parallel-cnn-attn-kedge-lateevidence-no-material",
+        "funnel-cnn224-160-128-attn6-edgegate",
     }
     if model_variant not in supported_model_variants:
         allowed = ", ".join(sorted(supported_model_variants))
         print(f"Error: Unsupported model variant '{model_variant}'")
         print(f"Expected one of: {allowed}")
-        raise typer.Exit(1)
-
-    # Check WANDB_API_KEY
-    if not os.environ.get("WANDB_API_KEY"):
-        print("Error: WANDB_API_KEY env var is required")
         raise typer.Exit(1)
 
     supported_schedulers = {"warm-restart", "warmup-cosine"}
@@ -144,6 +148,19 @@ def train(
 
     if not 0.0 < warmup_start_factor <= 1.0:
         print("Error: --warmup-start-factor must be in the range (0, 1]")
+        raise typer.Exit(1)
+
+    from train.compile_modes import SUPPORTED_COMPILE_MODES
+
+    if compile_mode not in SUPPORTED_COMPILE_MODES:
+        allowed = ", ".join(SUPPORTED_COMPILE_MODES)
+        print(f"Error: Unsupported compile mode '{compile_mode}'")
+        print(f"Expected one of: {allowed}")
+        raise typer.Exit(1)
+
+    # Check WANDB_API_KEY
+    if not os.environ.get("WANDB_API_KEY"):
+        print("Error: WANDB_API_KEY env var is required")
         raise typer.Exit(1)
 
     from libs.paths import checkpoint_path
@@ -173,6 +190,7 @@ def train(
         warmup_epochs=warmup_epochs,
         warmup_start_factor=warmup_start_factor,
         grad_clip=grad_clip,
+        compile_mode=compile_mode,
         resume=resume,
         train_workers=train_workers,
         val_workers=val_workers,

@@ -51,6 +51,7 @@ def run_training(
     warmup_epochs: int,
     warmup_start_factor: float,
     grad_clip: float,
+    compile_mode: str,
     resume: bool,
     train_workers: int = 4,
     val_workers: int = 2,
@@ -97,6 +98,7 @@ def run_training(
     else:
         raise ValueError(f"Unsupported scheduler: {scheduler}")
     print(f"[✓] Grad clip: {grad_clip}")
+    print(f"[✓] Compile mode: {compile_mode}")
     print(
         f"[✓] DataLoader workers: train={train_workers}, val={val_workers} | Upload checkpoints: {upload_checkpoints}"
     )
@@ -119,6 +121,7 @@ def run_training(
         steps_per_epoch=steps_per_epoch,
         batch_size=batch_size,
         grad_clip=grad_clip,
+        compile_mode=compile_mode,
         upload_checkpoints=upload_checkpoints,
     )
 

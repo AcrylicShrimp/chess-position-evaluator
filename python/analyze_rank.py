@@ -128,6 +128,21 @@ def register_hooks(model: ValueOnlyModel) -> dict:
                 model.board_attention.register_forward_hook(
                     make_hook("board_attention")
                 )
+    elif hasattr(model, "trunk") and hasattr(model.trunk, "wide_blocks"):
+        for i, block in enumerate(model.trunk.wide_blocks):
+            block.register_forward_hook(make_hook(f"wide_block_{i}"))
+        model.trunk.compress_wide_to_mid.register_forward_hook(
+            make_hook("compress_wide_to_mid")
+        )
+        for i, block in enumerate(model.trunk.mid_blocks):
+            block.register_forward_hook(make_hook(f"mid_block_{i}"))
+        model.trunk.compress_mid_to_attention.register_forward_hook(
+            make_hook("compress_mid_to_attention")
+        )
+        for i, block in enumerate(model.trunk.narrow_blocks):
+            block.register_forward_hook(make_hook(f"narrow_block_{i}"))
+        for i, block in enumerate(model.trunk.attention_blocks.layers):
+            block.register_forward_hook(make_hook(f"attention_block_{i}"))
     elif hasattr(model, "trunk"):
         for i, block in enumerate(model.trunk.shared_blocks):
             block.register_forward_hook(make_hook(f"shared_block_{i}"))
