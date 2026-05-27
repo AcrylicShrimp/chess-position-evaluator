@@ -564,6 +564,44 @@ class ModelAttentionTest(unittest.TestCase):
             589205,
         )
 
+    def test_parallel_cnn_attention_kedge_fuse_no_material_variant_topology(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=(
+                model_module.
+                MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_FUSE_NO_MATERIAL
+            ),
+        )
+        model.eval()
+
+        self.assertIsInstance(
+            model.trunk, model_module.ParallelCnnAttentionTrunk)
+        self.assertIsInstance(model.value_head, model_module.ResidualValueHead)
+        self.assertFalse(hasattr(model, "blocks"))
+        self.assertFalse(hasattr(model, "board_attention"))
+
+        fuse_conv = model.trunk.fuse[0]
+        self.assertIsInstance(fuse_conv, torch.nn.Conv2d)
+        self.assertEqual(fuse_conv.in_channels, model_module.CHANNELS * 2)
+        self.assertEqual(fuse_conv.out_channels, model_module.CHANNELS)
+        self.assertEqual(fuse_conv.kernel_size, (1, 1))
+
+        for layer in model.trunk.global_blocks.layers:
+            self.assertEqual(layer.attention.edge_gate_mode,
+                             model_module.EDGE_GATE_K_ONLY)
+            self.assertIsNone(layer.attention.rel_gate_q)
+            self.assertIsNone(layer.attention.dist_gate_q)
+            self.assertIsNotNone(layer.attention.rel_gate_k)
+            self.assertIsNotNone(layer.attention.dist_gate_k)
+
+        with torch.no_grad():
+            output = model(torch.zeros(1, 20, 8, 8))
+
+        self.assertEqual(output.shape, torch.Size([1, 1]))
+        self.assertEqual(
+            sum(p.numel() for p in model.parameters()),
+            585941,
+        )
+
     def test_parallel_cnn_attention_kedge_late_evidence_no_material_topology(self):
         model = model_module.ValueOnlyModel(
             model_variant=(
@@ -631,6 +669,13 @@ class ModelAttentionTest(unittest.TestCase):
         )
         self.assertIn(
             model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL,
+            model_module.SUPPORTED_MODEL_VARIANTS,
+        )
+        self.assertIn(
+            (
+                model_module.
+                MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_FUSE_NO_MATERIAL
+            ),
             model_module.SUPPORTED_MODEL_VARIANTS,
         )
         self.assertIn(

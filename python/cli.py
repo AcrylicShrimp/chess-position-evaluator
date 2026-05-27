@@ -51,6 +51,7 @@ def train(
             "no-attention, parallel-cnn-attn-fuse, or "
             "parallel-cnn-attn-aligned-add, or "
             "parallel-cnn-attn-fuse-no-material, or "
+            "parallel-cnn-attn-kedge-fuse-no-material, or "
             "parallel-cnn-attn-kedge-lateevidence-no-material"
         ),
     ),
@@ -116,6 +117,7 @@ def train(
         "parallel-cnn-attn-fuse",
         "parallel-cnn-attn-aligned-add",
         "parallel-cnn-attn-fuse-no-material",
+        "parallel-cnn-attn-kedge-fuse-no-material",
         "parallel-cnn-attn-kedge-lateevidence-no-material",
     }
     if model_variant not in supported_model_variants:

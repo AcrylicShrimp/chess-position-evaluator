@@ -23,6 +23,9 @@ MODEL_VARIANT_PARALLEL_CNN_ATTN_ALIGNED_ADD = "parallel-cnn-attn-aligned-add"
 MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL = (
     "parallel-cnn-attn-fuse-no-material"
 )
+MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_FUSE_NO_MATERIAL = (
+    "parallel-cnn-attn-kedge-fuse-no-material"
+)
 MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_LATEEVIDENCE_NO_MATERIAL = (
     "parallel-cnn-attn-kedge-lateevidence-no-material"
 )
@@ -33,6 +36,7 @@ SUPPORTED_MODEL_VARIANTS = (
     MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,
     MODEL_VARIANT_PARALLEL_CNN_ATTN_ALIGNED_ADD,
     MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL,
+    MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_FUSE_NO_MATERIAL,
     MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_LATEEVIDENCE_NO_MATERIAL,
 )
 EDGE_GATE_QK = "qk"
@@ -510,7 +514,7 @@ class IdentityBoardAttention(torch.nn.Module):
 
 
 class ParallelCnnAttentionTrunk(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, edge_gate_mode: str = EDGE_GATE_QK):
         super().__init__()
         self.shared_blocks = torch.nn.Sequential(
             *[
@@ -530,6 +534,7 @@ class ParallelCnnAttentionTrunk(torch.nn.Module):
             ATTENTION_HEADS,
             ATTENTION_HEAD_DIM,
             ATTENTION_FFN_HIDDEN,
+            edge_gate_mode=edge_gate_mode,
         )
         self.fuse = torch.nn.Sequential(
             torch.nn.Conv2d(CHANNELS * 2, CHANNELS, kernel_size=1, bias=False),
@@ -976,6 +981,13 @@ class ValueOnlyModel(torch.nn.Module):
             self.value_head = ResidualValueHead()
         elif (
             model_variant
+            == MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_FUSE_NO_MATERIAL
+        ):
+            self.trunk = ParallelCnnAttentionTrunk(
+                edge_gate_mode=EDGE_GATE_K_ONLY)
+            self.value_head = ResidualValueHead()
+        elif (
+            model_variant
             == MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_LATEEVIDENCE_NO_MATERIAL
         ):
             self.trunk = ParallelCnnAttentionKEdgeLateEvidenceTrunk()
@@ -995,6 +1007,7 @@ class ValueOnlyModel(torch.nn.Module):
             and self.model_variant
             not in {
                 MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL,
+                MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_FUSE_NO_MATERIAL,
                 MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_LATEEVIDENCE_NO_MATERIAL,
             }
         ):
@@ -1007,6 +1020,7 @@ class ValueOnlyModel(torch.nn.Module):
 
         if self.model_variant in {
             MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL,
+            MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_FUSE_NO_MATERIAL,
             MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_LATEEVIDENCE_NO_MATERIAL,
         }:
             out = self.trunk(out)
