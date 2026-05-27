@@ -128,6 +128,8 @@ class CliSmokeTest(unittest.TestCase):
         self.assertIn("parallel-cnn-attn-fuse", result.output)
         self.assertIn("parallel-cnn-attn-aligned-add", result.output)
         self.assertIn("parallel-cnn-attn-fuse-no-material", result.output)
+        self.assertIn("parallel-cnn-attn-kedge-lateevidence-no-material",
+                      result.output)
 
 
 if __name__ == "__main__":

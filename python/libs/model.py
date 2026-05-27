@@ -23,6 +23,9 @@ MODEL_VARIANT_PARALLEL_CNN_ATTN_ALIGNED_ADD = "parallel-cnn-attn-aligned-add"
 MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL = (
     "parallel-cnn-attn-fuse-no-material"
 )
+MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_LATEEVIDENCE_NO_MATERIAL = (
+    "parallel-cnn-attn-kedge-lateevidence-no-material"
+)
 SUPPORTED_MODEL_VARIANTS = (
     MODEL_VARIANT_STACKED_EDGE_GATE_FFN,
     MODEL_VARIANT_ONE_LAYER_EDGE_GATE,
@@ -30,7 +33,11 @@ SUPPORTED_MODEL_VARIANTS = (
     MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,
     MODEL_VARIANT_PARALLEL_CNN_ATTN_ALIGNED_ADD,
     MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL,
+    MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_LATEEVIDENCE_NO_MATERIAL,
 )
+EDGE_GATE_QK = "qk"
+EDGE_GATE_Q_ONLY = "q-only"
+EDGE_GATE_K_ONLY = "k-only"
 ATTENTION_HEADS = 4
 ATTENTION_HEAD_DIM = 16
 ATTENTION_DIM = ATTENTION_HEADS * ATTENTION_HEAD_DIM
@@ -255,18 +262,33 @@ class CoordinateAttention(torch.nn.Module):
 
 
 class NaiveBoardSelfAttention(torch.nn.Module):
-    def __init__(self, channels: int, heads: int, head_dim: int):
+    def __init__(
+        self,
+        channels: int,
+        heads: int,
+        head_dim: int,
+        edge_gate_mode: str = EDGE_GATE_QK,
+    ):
         super().__init__()
         if heads <= 0:
             raise ValueError("board attention requires at least one head")
         if head_dim <= 0:
             raise ValueError(
                 "board attention requires a positive head dimension")
+        if edge_gate_mode not in {
+            EDGE_GATE_QK,
+            EDGE_GATE_Q_ONLY,
+            EDGE_GATE_K_ONLY,
+        }:
+            raise ValueError(
+                f"unsupported edge gate mode {edge_gate_mode!r}"
+            )
 
         self.channels = channels
         self.heads = heads
         self.head_dim = head_dim
         self.attn_dim = heads * head_dim
+        self.edge_gate_mode = edge_gate_mode
         self.scale = head_dim**-0.5
         (
             relation_masks_flat,
@@ -286,18 +308,27 @@ class NaiveBoardSelfAttention(torch.nn.Module):
         self.out_proj = torch.nn.Conv2d(
             self.attn_dim, channels, kernel_size=1, bias=False
         )
-        self.rel_gate_q = torch.nn.Parameter(
-            torch.zeros(heads, len(BOARD_ATTENTION_RELATIONS), head_dim)
-        )
-        self.rel_gate_k = torch.nn.Parameter(
-            torch.zeros(heads, len(BOARD_ATTENTION_RELATIONS), head_dim)
-        )
-        self.dist_gate_q = torch.nn.Parameter(
-            torch.zeros(heads, BOARD_ATTENTION_SIZE, head_dim)
-        )
-        self.dist_gate_k = torch.nn.Parameter(
-            torch.zeros(heads, BOARD_ATTENTION_SIZE, head_dim)
-        )
+        if edge_gate_mode in {EDGE_GATE_QK, EDGE_GATE_Q_ONLY}:
+            self.rel_gate_q = torch.nn.Parameter(
+                torch.zeros(heads, len(BOARD_ATTENTION_RELATIONS), head_dim)
+            )
+            self.dist_gate_q = torch.nn.Parameter(
+                torch.zeros(heads, BOARD_ATTENTION_SIZE, head_dim)
+            )
+        else:
+            self.register_parameter("rel_gate_q", None)
+            self.register_parameter("dist_gate_q", None)
+
+        if edge_gate_mode in {EDGE_GATE_QK, EDGE_GATE_K_ONLY}:
+            self.rel_gate_k = torch.nn.Parameter(
+                torch.zeros(heads, len(BOARD_ATTENTION_RELATIONS), head_dim)
+            )
+            self.dist_gate_k = torch.nn.Parameter(
+                torch.zeros(heads, BOARD_ATTENTION_SIZE, head_dim)
+            )
+        else:
+            self.register_parameter("rel_gate_k", None)
+            self.register_parameter("dist_gate_k", None)
         self.register_buffer("relation_masks_flat", relation_masks_flat)
         self.register_buffer("distance_index_flat", distance_index_flat)
         self.register_buffer("distance_masks_flat", distance_masks_flat)
@@ -316,42 +347,45 @@ class NaiveBoardSelfAttention(torch.nn.Module):
             BOARD_ATTENTION_SIZE, tokens, tokens
         ).to(dtype=dtype, device=q.device)
 
-        rel_gate_q = self.rel_gate_q.to(dtype=dtype)
-        rel_gate_k = self.rel_gate_k.to(dtype=dtype)
-        dist_gate_q = self.dist_gate_q.to(dtype=dtype)
-        dist_gate_k = self.dist_gate_k.to(dtype=dtype)
+        edge_logits = None
 
-        edge_q_vectors = torch.einsum(
-            "rij,hrd->hijd",
-            relation_masks,
-            rel_gate_q,
-        ) + torch.einsum(
-            "mij,hmd->hijd",
-            distance_masks,
-            dist_gate_q,
-        )
-        edge_k_vectors = torch.einsum(
-            "rij,hrd->hijd",
-            relation_masks,
-            rel_gate_k,
-        ) + torch.einsum(
-            "mij,hmd->hijd",
-            distance_masks,
-            dist_gate_k,
-        )
+        if self.edge_gate_mode in {EDGE_GATE_QK, EDGE_GATE_Q_ONLY}:
+            edge_q_vectors = torch.einsum(
+                "rij,hrd->hijd",
+                relation_masks,
+                self.rel_gate_q.to(dtype=dtype),
+            ) + torch.einsum(
+                "mij,hmd->hijd",
+                distance_masks,
+                self.dist_gate_q.to(dtype=dtype),
+            )
+            edge_logits = torch.einsum(
+                "bhid,hijd->bhij",
+                q.to(dtype=dtype),
+                edge_q_vectors,
+            )
 
-        edge_q_logits = torch.einsum(
-            "bhid,hijd->bhij",
-            q.to(dtype=dtype),
-            edge_q_vectors,
-        )
-        edge_k_logits = torch.einsum(
-            "bhjd,hijd->bhij",
-            k.to(dtype=dtype),
-            edge_k_vectors,
-        )
+        if self.edge_gate_mode in {EDGE_GATE_QK, EDGE_GATE_K_ONLY}:
+            edge_k_vectors = torch.einsum(
+                "rij,hrd->hijd",
+                relation_masks,
+                self.rel_gate_k.to(dtype=dtype),
+            ) + torch.einsum(
+                "mij,hmd->hijd",
+                distance_masks,
+                self.dist_gate_k.to(dtype=dtype),
+            )
+            edge_k_logits = torch.einsum(
+                "bhjd,hijd->bhij",
+                k.to(dtype=dtype),
+                edge_k_vectors,
+            )
+            if edge_logits is None:
+                edge_logits = edge_k_logits
+            else:
+                edge_logits = edge_logits + edge_k_logits
 
-        return (edge_q_logits + edge_k_logits) * self.scale
+        return edge_logits * self.scale
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if not torch.jit.is_tracing() and (x.dim() != 4 or x.shape[1] != self.channels):
@@ -414,9 +448,21 @@ class BoardAttentionFFN(torch.nn.Module):
 
 
 class BoardAttentionBlock(torch.nn.Module):
-    def __init__(self, channels: int, heads: int, head_dim: int, ffn_hidden: int):
+    def __init__(
+        self,
+        channels: int,
+        heads: int,
+        head_dim: int,
+        ffn_hidden: int,
+        edge_gate_mode: str = EDGE_GATE_QK,
+    ):
         super().__init__()
-        self.attention = NaiveBoardSelfAttention(channels, heads, head_dim)
+        self.attention = NaiveBoardSelfAttention(
+            channels,
+            heads,
+            head_dim,
+            edge_gate_mode=edge_gate_mode,
+        )
         self.ffn = BoardAttentionFFN(channels, ffn_hidden)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -432,6 +478,7 @@ class BoardAttentionStack(torch.nn.Module):
         heads: int,
         head_dim: int,
         ffn_hidden: int,
+        edge_gate_mode: str = EDGE_GATE_QK,
     ):
         super().__init__()
         if layers <= 0:
@@ -440,7 +487,13 @@ class BoardAttentionStack(torch.nn.Module):
 
         self.layers = torch.nn.ModuleList(
             [
-                BoardAttentionBlock(channels, heads, head_dim, ffn_hidden)
+                BoardAttentionBlock(
+                    channels,
+                    heads,
+                    head_dim,
+                    ffn_hidden,
+                    edge_gate_mode=edge_gate_mode,
+                )
                 for _ in range(layers)
             ]
         )
@@ -533,6 +586,49 @@ class ParallelCnnAttentionAlignedAddTrunk(torch.nn.Module):
         local_aligned = self.local_aligner(local)
         global_aligned = self.global_aligner(global_)
         return self.fuse(local_aligned + global_aligned)
+
+
+class ParallelCnnAttentionKEdgeLateEvidenceTrunk(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.shared_blocks = torch.nn.Sequential(
+            *[
+                GhostShuffleBlock(CHANNELS, ratio=4)
+                for _ in range(ATTENTION_AFTER_BLOCK)
+            ]
+        )
+        self.local_blocks = torch.nn.Sequential(
+            *[
+                GhostShuffleBlock(CHANNELS, ratio=4)
+                for _ in range(BLOCKS - ATTENTION_AFTER_BLOCK)
+            ]
+        )
+        self.global_blocks = BoardAttentionStack(
+            ATTENTION_LAYERS,
+            CHANNELS,
+            ATTENTION_HEADS,
+            ATTENTION_HEAD_DIM,
+            ATTENTION_FFN_HIDDEN,
+            edge_gate_mode=EDGE_GATE_K_ONLY,
+        )
+        self.local_evidence = torch.nn.Sequential(
+            torch.nn.Conv2d(CHANNELS, 2, kernel_size=1, bias=False),
+            torch.nn.BatchNorm2d(2),
+            torch.nn.Hardswish(inplace=True),
+        )
+        self.global_evidence = torch.nn.Sequential(
+            torch.nn.Conv2d(CHANNELS, 2, kernel_size=1, bias=False),
+            torch.nn.BatchNorm2d(2),
+            torch.nn.Hardswish(inplace=True),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        shared = self.shared_blocks(x)
+        local = self.local_blocks(shared)
+        global_ = self.global_blocks(shared)
+        local_evidence = self.local_evidence(local)
+        global_evidence = self.global_evidence(global_)
+        return torch.cat([local_evidence, global_evidence], dim=1)
 
 
 def build_board_attention(model_variant: str) -> torch.nn.Module:
@@ -755,6 +851,24 @@ class MaterialFeatureValueHead(torch.nn.Module):
         return self.mlp(out)
 
 
+class LateEvidenceValueHead(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.mlp = torch.nn.Sequential(
+            torch.nn.Linear(4 * 8 * 8, 64),
+            torch.nn.Hardswish(inplace=True),
+            torch.nn.Linear(64, 1),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if not torch.jit.is_tracing() and (x.dim() != 4 or x.shape[1] != 4):
+            raise ValueError(
+                "late evidence value head requires [B, 4, 8, 8] input"
+            )
+        out = x.flatten(start_dim=1)
+        return self.mlp(out)
+
+
 class PolicyHead(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -860,6 +974,12 @@ class ValueOnlyModel(torch.nn.Module):
         elif model_variant == MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL:
             self.trunk = ParallelCnnAttentionTrunk()
             self.value_head = ResidualValueHead()
+        elif (
+            model_variant
+            == MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_LATEEVIDENCE_NO_MATERIAL
+        ):
+            self.trunk = ParallelCnnAttentionKEdgeLateEvidenceTrunk()
+            self.value_head = LateEvidenceValueHead()
         else:
             self.blocks = torch.nn.Sequential(
                 *[GhostShuffleBlock(CHANNELS, ratio=4) for _ in range(BLOCKS)],
@@ -873,7 +993,10 @@ class ValueOnlyModel(torch.nn.Module):
         if (
             material_diff is None
             and self.model_variant
-            != MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL
+            not in {
+                MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL,
+                MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_LATEEVIDENCE_NO_MATERIAL,
+            }
         ):
             material_diff = _material_diff_from_board(
                 x, self.material_weights
@@ -882,7 +1005,10 @@ class ValueOnlyModel(torch.nn.Module):
         out = self.add_coords(x)
         out = self.initial_block(out)
 
-        if self.model_variant == MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL:
+        if self.model_variant in {
+            MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL,
+            MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_LATEEVIDENCE_NO_MATERIAL,
+        }:
             out = self.trunk(out)
             return self.value_head(out)
 

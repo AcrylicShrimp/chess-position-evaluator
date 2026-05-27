@@ -135,12 +135,24 @@ def register_hooks(model: ValueOnlyModel) -> dict:
             block.register_forward_hook(make_hook(f"local_block_{i}"))
         for i, block in enumerate(model.trunk.global_blocks.layers):
             block.register_forward_hook(make_hook(f"global_block_{i}"))
-        model.trunk.fuse.register_forward_hook(make_hook("fuse"))
+        if hasattr(model.trunk, "fuse"):
+            model.trunk.fuse.register_forward_hook(make_hook("fuse"))
+        if hasattr(model.trunk, "local_evidence"):
+            model.trunk.local_evidence.register_forward_hook(
+                make_hook("local_evidence")
+            )
+        if hasattr(model.trunk, "global_evidence"):
+            model.trunk.global_evidence.register_forward_hook(
+                make_hook("global_evidence")
+            )
     else:
-        raise ValueError("unsupported model structure for activation rank analysis")
+        raise ValueError(
+            "unsupported model structure for activation rank analysis")
 
     # Hook named value head modules.
-    model.value_head.conv.register_forward_hook(make_hook("value_head_conv"))
+    if hasattr(model.value_head, "conv"):
+        model.value_head.conv.register_forward_hook(
+            make_hook("value_head_conv"))
     model.value_head.mlp.register_forward_hook(make_hook("value_head_mlp"))
 
     return activations

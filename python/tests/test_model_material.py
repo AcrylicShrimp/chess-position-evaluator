@@ -228,6 +228,29 @@ class ModelMaterialFeatureTest(unittest.TestCase):
         self.assertTrue(torch.equal(
             low_material_output, high_material_output))
 
+    def test_parallel_kedge_late_evidence_no_material_variant_ignores_material_diff(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=(
+                model_module.
+                MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_LATEEVIDENCE_NO_MATERIAL
+            ),
+        )
+        model.eval()
+        board = make_known_material_board()
+
+        with torch.no_grad():
+            low_material_output = model(
+                board,
+                material_diff=torch.tensor([-99.0]),
+            )
+            high_material_output = model(
+                board,
+                material_diff=torch.tensor([99.0]),
+            )
+
+        self.assertTrue(torch.equal(
+            low_material_output, high_material_output))
+
     def test_value_only_top_level_material_weights_are_not_checkpoint_state(self):
         model = model_module.ValueOnlyModel(
             model_variant=model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,

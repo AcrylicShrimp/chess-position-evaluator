@@ -268,6 +268,37 @@ class ModelAttentionTest(unittest.TestCase):
         self.assertEqual(edge_gate_logits[0, 0, query, key].item(), expected)
         self.assertEqual(edge_gate_logits[0, 1, query, key].item(), 0.0)
 
+    def test_k_only_edge_gate_omits_query_gate_parameters(self):
+        attention = model_module.NaiveBoardSelfAttention(
+            model_module.CHANNELS,
+            model_module.ATTENTION_HEADS,
+            model_module.ATTENTION_HEAD_DIM,
+            edge_gate_mode=model_module.EDGE_GATE_K_ONLY,
+        )
+        tokens = model_module.BOARD_ATTENTION_SIZE * model_module.BOARD_ATTENTION_SIZE
+        q_a = torch.randn(
+            2,
+            model_module.ATTENTION_HEADS,
+            tokens,
+            model_module.ATTENTION_HEAD_DIM,
+        )
+        q_b = torch.randn_like(q_a)
+        k = torch.randn_like(q_a)
+        with torch.no_grad():
+            attention.rel_gate_k.fill_(0.25)
+            attention.dist_gate_k.fill_(-0.125)
+
+        logits_a = attention._edge_gate_logits(q_a, k, tokens, torch.float32)
+        logits_b = attention._edge_gate_logits(q_b, k, tokens, torch.float32)
+
+        self.assertIsNone(attention.rel_gate_q)
+        self.assertIsNone(attention.dist_gate_q)
+        self.assertNotIn("rel_gate_q", attention.state_dict())
+        self.assertNotIn("dist_gate_q", attention.state_dict())
+        self.assertIn("rel_gate_k", attention.state_dict())
+        self.assertIn("dist_gate_k", attention.state_dict())
+        self.assertTrue(torch.equal(logits_a, logits_b))
+
     def test_zero_edge_gate_matches_unbiased_attention_logits(self):
         torch.manual_seed(0)
         attention = model_module.NaiveBoardSelfAttention(
@@ -533,6 +564,62 @@ class ModelAttentionTest(unittest.TestCase):
             589205,
         )
 
+    def test_parallel_cnn_attention_kedge_late_evidence_no_material_topology(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=(
+                model_module.
+                MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_LATEEVIDENCE_NO_MATERIAL
+            ),
+        )
+        model.eval()
+
+        self.assertIsInstance(
+            model.trunk,
+            model_module.ParallelCnnAttentionKEdgeLateEvidenceTrunk,
+        )
+        self.assertIsInstance(model.value_head,
+                              model_module.LateEvidenceValueHead)
+        self.assertEqual(len(model.trunk.shared_blocks), 3)
+        self.assertEqual(len(model.trunk.local_blocks), 3)
+        self.assertIsInstance(model.trunk.global_blocks,
+                              model_module.BoardAttentionStack)
+        self.assertEqual(len(model.trunk.global_blocks.layers), 3)
+        self.assertFalse(hasattr(model.trunk, "fuse"))
+        self.assertFalse(hasattr(model, "blocks"))
+        self.assertFalse(hasattr(model, "board_attention"))
+
+        for layer in model.trunk.global_blocks.layers:
+            self.assertEqual(layer.attention.edge_gate_mode,
+                             model_module.EDGE_GATE_K_ONLY)
+            self.assertIsNone(layer.attention.rel_gate_q)
+            self.assertIsNone(layer.attention.dist_gate_q)
+            self.assertIsNotNone(layer.attention.rel_gate_k)
+            self.assertIsNotNone(layer.attention.dist_gate_k)
+            self.assertEqual(layer.ffn.net[0].out_channels, 64)
+
+        for evidence in (model.trunk.local_evidence,
+                         model.trunk.global_evidence):
+            evidence_conv = evidence[0]
+            self.assertIsInstance(evidence_conv, torch.nn.Conv2d)
+            self.assertEqual(evidence_conv.in_channels, model_module.CHANNELS)
+            self.assertEqual(evidence_conv.out_channels, 2)
+            self.assertEqual(evidence_conv.kernel_size, (1, 1))
+            self.assertIsInstance(evidence[1], torch.nn.BatchNorm2d)
+            self.assertIsInstance(evidence[2], torch.nn.Hardswish)
+
+        with torch.no_grad():
+            trunk_output = model.trunk(
+                torch.zeros(1, model_module.CHANNELS, 8, 8)
+            )
+            output = model(torch.zeros(1, 20, 8, 8))
+
+        self.assertEqual(trunk_output.shape, torch.Size([1, 4, 8, 8]))
+        self.assertEqual(output.shape, torch.Size([1, 1]))
+        self.assertEqual(
+            sum(p.numel() for p in model.parameters()),
+            463065,
+        )
+
     def test_supported_model_variants_include_parallel_fusion(self):
         self.assertIn(
             model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,
@@ -544,6 +631,13 @@ class ModelAttentionTest(unittest.TestCase):
         )
         self.assertIn(
             model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL,
+            model_module.SUPPORTED_MODEL_VARIANTS,
+        )
+        self.assertIn(
+            (
+                model_module.
+                MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_LATEEVIDENCE_NO_MATERIAL
+            ),
             model_module.SUPPORTED_MODEL_VARIANTS,
         )
 

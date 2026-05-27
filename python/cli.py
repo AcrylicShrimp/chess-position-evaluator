@@ -50,7 +50,8 @@ def train(
             "Model variant: stacked-edge-gate-ffn, one-layer-edge-gate, "
             "no-attention, parallel-cnn-attn-fuse, or "
             "parallel-cnn-attn-aligned-add, or "
-            "parallel-cnn-attn-fuse-no-material"
+            "parallel-cnn-attn-fuse-no-material, or "
+            "parallel-cnn-attn-kedge-lateevidence-no-material"
         ),
     ),
     scheduler: str = typer.Option(
@@ -115,6 +116,7 @@ def train(
         "parallel-cnn-attn-fuse",
         "parallel-cnn-attn-aligned-add",
         "parallel-cnn-attn-fuse-no-material",
+        "parallel-cnn-attn-kedge-lateevidence-no-material",
     }
     if model_variant not in supported_model_variants:
         allowed = ", ".join(sorted(supported_model_variants))
