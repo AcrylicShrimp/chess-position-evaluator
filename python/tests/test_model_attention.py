@@ -472,9 +472,78 @@ class ModelAttentionTest(unittest.TestCase):
             589397,
         )
 
+    def test_parallel_cnn_attention_aligned_add_variant_topology(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_ALIGNED_ADD,
+        )
+        model.eval()
+
+        self.assertIsInstance(
+            model.trunk, model_module.ParallelCnnAttentionAlignedAddTrunk)
+        self.assertEqual(len(model.trunk.shared_blocks), 3)
+        self.assertEqual(len(model.trunk.local_blocks), 3)
+        self.assertIsInstance(model.trunk.global_blocks,
+                              model_module.BoardAttentionStack)
+        self.assertEqual(len(model.trunk.global_blocks.layers), 3)
+        self.assertIsInstance(
+            model.value_head, model_module.MaterialFeatureValueHead)
+
+        for aligner in (model.trunk.local_aligner, model.trunk.global_aligner):
+            self.assertIsInstance(aligner[0], torch.nn.BatchNorm2d)
+            self.assertIsInstance(aligner[1], torch.nn.Conv2d)
+            self.assertEqual(aligner[1].in_channels, model_module.CHANNELS)
+            self.assertEqual(aligner[1].out_channels, model_module.CHANNELS)
+            self.assertEqual(aligner[1].kernel_size, (1, 1))
+            self.assertFalse(aligner[1].bias)
+
+        self.assertIsInstance(model.trunk.fuse[0], torch.nn.BatchNorm2d)
+        self.assertIsInstance(model.trunk.fuse[1], torch.nn.Hardswish)
+        self.assertFalse(hasattr(model, "blocks"))
+        self.assertFalse(hasattr(model, "board_attention"))
+
+        with torch.no_grad():
+            output = model(torch.zeros(1, 20, 8, 8))
+
+        self.assertEqual(output.shape, torch.Size([1, 1]))
+        self.assertEqual(
+            sum(p.numel() for p in model.parameters()),
+            590421,
+        )
+
+    def test_parallel_cnn_attention_fuse_no_material_variant_topology(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=(
+                model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL
+            ),
+        )
+        model.eval()
+
+        self.assertIsInstance(
+            model.trunk, model_module.ParallelCnnAttentionTrunk)
+        self.assertIsInstance(model.value_head, model_module.ResidualValueHead)
+        self.assertFalse(hasattr(model, "blocks"))
+        self.assertFalse(hasattr(model, "board_attention"))
+
+        with torch.no_grad():
+            output = model(torch.zeros(1, 20, 8, 8))
+
+        self.assertEqual(output.shape, torch.Size([1, 1]))
+        self.assertEqual(
+            sum(p.numel() for p in model.parameters()),
+            589205,
+        )
+
     def test_supported_model_variants_include_parallel_fusion(self):
         self.assertIn(
             model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,
+            model_module.SUPPORTED_MODEL_VARIANTS,
+        )
+        self.assertIn(
+            model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_ALIGNED_ADD,
+            model_module.SUPPORTED_MODEL_VARIANTS,
+        )
+        self.assertIn(
+            model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL,
             model_module.SUPPORTED_MODEL_VARIANTS,
         )
 

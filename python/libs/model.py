@@ -19,11 +19,17 @@ MODEL_VARIANT_STACKED_EDGE_GATE_FFN = "stacked-edge-gate-ffn"
 MODEL_VARIANT_ONE_LAYER_EDGE_GATE = "one-layer-edge-gate"
 MODEL_VARIANT_NO_ATTENTION = "no-attention"
 MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE = "parallel-cnn-attn-fuse"
+MODEL_VARIANT_PARALLEL_CNN_ATTN_ALIGNED_ADD = "parallel-cnn-attn-aligned-add"
+MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL = (
+    "parallel-cnn-attn-fuse-no-material"
+)
 SUPPORTED_MODEL_VARIANTS = (
     MODEL_VARIANT_STACKED_EDGE_GATE_FFN,
     MODEL_VARIANT_ONE_LAYER_EDGE_GATE,
     MODEL_VARIANT_NO_ATTENTION,
     MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,
+    MODEL_VARIANT_PARALLEL_CNN_ATTN_ALIGNED_ADD,
+    MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL,
 )
 ATTENTION_HEADS = 4
 ATTENTION_HEAD_DIM = 16
@@ -485,6 +491,50 @@ class ParallelCnnAttentionTrunk(torch.nn.Module):
         return self.fuse(torch.cat([local, global_], dim=1))
 
 
+class ParallelCnnAttentionAlignedAddTrunk(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.shared_blocks = torch.nn.Sequential(
+            *[
+                GhostShuffleBlock(CHANNELS, ratio=4)
+                for _ in range(ATTENTION_AFTER_BLOCK)
+            ]
+        )
+        self.local_blocks = torch.nn.Sequential(
+            *[
+                GhostShuffleBlock(CHANNELS, ratio=4)
+                for _ in range(BLOCKS - ATTENTION_AFTER_BLOCK)
+            ]
+        )
+        self.global_blocks = BoardAttentionStack(
+            ATTENTION_LAYERS,
+            CHANNELS,
+            ATTENTION_HEADS,
+            ATTENTION_HEAD_DIM,
+            ATTENTION_FFN_HIDDEN,
+        )
+        self.local_aligner = torch.nn.Sequential(
+            torch.nn.BatchNorm2d(CHANNELS),
+            torch.nn.Conv2d(CHANNELS, CHANNELS, kernel_size=1, bias=False),
+        )
+        self.global_aligner = torch.nn.Sequential(
+            torch.nn.BatchNorm2d(CHANNELS),
+            torch.nn.Conv2d(CHANNELS, CHANNELS, kernel_size=1, bias=False),
+        )
+        self.fuse = torch.nn.Sequential(
+            torch.nn.BatchNorm2d(CHANNELS),
+            torch.nn.Hardswish(inplace=True),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        shared = self.shared_blocks(x)
+        local = self.local_blocks(shared)
+        global_ = self.global_blocks(shared)
+        local_aligned = self.local_aligner(local)
+        global_aligned = self.global_aligner(global_)
+        return self.fuse(local_aligned + global_aligned)
+
+
 def build_board_attention(model_variant: str) -> torch.nn.Module:
     if model_variant == MODEL_VARIANT_STACKED_EDGE_GATE_FFN:
         return BoardAttentionStack(
@@ -804,6 +854,12 @@ class ValueOnlyModel(torch.nn.Module):
         if model_variant == MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE:
             self.trunk = ParallelCnnAttentionTrunk()
             self.value_head = MaterialFeatureValueHead()
+        elif model_variant == MODEL_VARIANT_PARALLEL_CNN_ATTN_ALIGNED_ADD:
+            self.trunk = ParallelCnnAttentionAlignedAddTrunk()
+            self.value_head = MaterialFeatureValueHead()
+        elif model_variant == MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL:
+            self.trunk = ParallelCnnAttentionTrunk()
+            self.value_head = ResidualValueHead()
         else:
             self.blocks = torch.nn.Sequential(
                 *[GhostShuffleBlock(CHANNELS, ratio=4) for _ in range(BLOCKS)],
@@ -814,7 +870,11 @@ class ValueOnlyModel(torch.nn.Module):
     def forward(
         self, x: torch.Tensor, material_diff: torch.Tensor | None = None
     ) -> torch.Tensor:
-        if material_diff is None:
+        if (
+            material_diff is None
+            and self.model_variant
+            != MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL
+        ):
             material_diff = _material_diff_from_board(
                 x, self.material_weights
             )
@@ -822,7 +882,14 @@ class ValueOnlyModel(torch.nn.Module):
         out = self.add_coords(x)
         out = self.initial_block(out)
 
-        if self.model_variant == MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE:
+        if self.model_variant == MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL:
+            out = self.trunk(out)
+            return self.value_head(out)
+
+        if self.model_variant in {
+            MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,
+            MODEL_VARIANT_PARALLEL_CNN_ATTN_ALIGNED_ADD,
+        }:
             out = self.trunk(out)
             return self.value_head(out, material_diff)
 

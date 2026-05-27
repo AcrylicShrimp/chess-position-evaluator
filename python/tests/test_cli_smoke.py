@@ -126,6 +126,8 @@ class CliSmokeTest(unittest.TestCase):
         self.assertIn("stacked-edge-gate-ffn", result.output)
         self.assertIn("no-attention", result.output)
         self.assertIn("parallel-cnn-attn-fuse", result.output)
+        self.assertIn("parallel-cnn-attn-aligned-add", result.output)
+        self.assertIn("parallel-cnn-attn-fuse-no-material", result.output)
 
 
 if __name__ == "__main__":

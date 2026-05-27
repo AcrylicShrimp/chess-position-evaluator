@@ -169,6 +169,65 @@ class ModelMaterialFeatureTest(unittest.TestCase):
         self.assertTrue(torch.equal(
             capture_head.material_diff, torch.tensor([7.0])))
 
+    def test_aligned_add_parallel_variant_passes_material_diff_to_feature_head(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_ALIGNED_ADD,
+        )
+        model.eval()
+        capture_head = CaptureValueHead()
+        model.value_head = capture_head
+
+        with torch.no_grad():
+            output = model(make_known_material_board())
+
+        self.assertTrue(torch.equal(output, torch.zeros_like(output)))
+        self.assertTrue(torch.equal(
+            capture_head.material_diff, torch.tensor([-4.0])))
+        self.assertEqual(
+            capture_head.activation_shape,
+            torch.Size([1, model_module.CHANNELS, 8, 8]),
+        )
+
+    def test_aligned_add_parallel_variant_explicit_material_diff_overrides_board_material(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_ALIGNED_ADD,
+        )
+        model.eval()
+        capture_head = CaptureValueHead()
+        model.value_head = capture_head
+
+        with torch.no_grad():
+            output = model(
+                make_known_material_board(),
+                material_diff=torch.tensor([7.0]),
+            )
+
+        self.assertTrue(torch.equal(output, torch.zeros_like(output)))
+        self.assertTrue(torch.equal(
+            capture_head.material_diff, torch.tensor([7.0])))
+
+    def test_parallel_no_material_variant_ignores_material_diff(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=(
+                model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL
+            ),
+        )
+        model.eval()
+        board = make_known_material_board()
+
+        with torch.no_grad():
+            low_material_output = model(
+                board,
+                material_diff=torch.tensor([-99.0]),
+            )
+            high_material_output = model(
+                board,
+                material_diff=torch.tensor([99.0]),
+            )
+
+        self.assertTrue(torch.equal(
+            low_material_output, high_material_output))
+
     def test_value_only_top_level_material_weights_are_not_checkpoint_state(self):
         model = model_module.ValueOnlyModel(
             model_variant=model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,
