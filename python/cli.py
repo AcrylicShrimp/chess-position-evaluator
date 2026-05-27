@@ -6,6 +6,8 @@ Usage:
     cpe analyze-rank <model-name>
     cpe analyze-material-labels
     cpe analyze-material-signal
+    cpe diagnose-parallel-fusion <parallel-model-name> <baseline-model-name>
+    cpe trace-processed-rows <diagnostic-report-path>
     cpe eval-dataset <model-name>
     cpe eval <model-name>
     cpe battle <model-name>
@@ -248,6 +250,91 @@ def analyze_material_signal(
             staging_path=staging,
             rows=rows,
             full=full,
+            batch_size=batch,
+            output_path=output,
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        print(f"Error: {exc}")
+        raise typer.Exit(1) from exc
+
+
+@app.command("diagnose-parallel-fusion")
+def diagnose_parallel_fusion(
+    parallel_model_name: str = typer.Argument(
+        ..., help="Parallel fusion model name without .pth extension"
+    ),
+    baseline_model_name: str = typer.Argument(
+        ..., help="Comparison baseline model name without .pth extension"
+    ),
+    split: str = typer.Option(
+        "validation",
+        help="Dataset split: train, validation, or test",
+    ),
+    dataset: Path | None = typer.Option(None, help="Override dataset path"),
+    rows: int = typer.Option(
+        200_000,
+        min=1,
+        help="Evaluate the first N rows",
+    ),
+    batch: int = typer.Option(2048, min=1, help="Evaluation batch size"),
+    device: str = typer.Option("auto", help="Device: auto, cpu, cuda, or mps"),
+    output: Path | None = typer.Option(None, help="Report output path"),
+):
+    """Diagnose a parallel fusion checkpoint against a baseline checkpoint."""
+    from analyze_parallel_fusion import run_parallel_fusion_diagnostics
+
+    try:
+        run_parallel_fusion_diagnostics(
+            parallel_model_name=parallel_model_name,
+            baseline_model_name=baseline_model_name,
+            split=split,
+            dataset_path=dataset,
+            rows=rows,
+            batch_size=batch,
+            device_name=device,
+            output_path=output,
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        print(f"Error: {exc}")
+        raise typer.Exit(1) from exc
+
+
+@app.command("trace-processed-rows")
+def trace_processed_rows(
+    diagnostic_report_path: Path = typer.Argument(
+        ..., help="Diagnostic JSON report containing top_examples"
+    ),
+    split: str = typer.Option(
+        "validation",
+        help="Dataset split: train, validation, or test",
+    ),
+    staging: Path | None = typer.Option(
+        None,
+        help="Override staging DuckDB path",
+    ),
+    top_worst: int = typer.Option(
+        10,
+        min=0,
+        help="Trace this many parallel_worst examples",
+    ),
+    top_best: int = typer.Option(
+        0,
+        min=0,
+        help="Trace this many parallel_best examples",
+    ),
+    batch: int = typer.Option(20_000, min=1, help="DuckDB fetch batch size"),
+    output: Path | None = typer.Option(None, help="Report output path"),
+):
+    """Map processed diagnostic row indices back to staging FEN/cp rows."""
+    from trace_processed_rows import run_trace_processed_rows
+
+    try:
+        run_trace_processed_rows(
+            diagnostic_report_path=diagnostic_report_path,
+            split=split,
+            staging_path=staging,
+            top_worst=top_worst,
+            top_best=top_best,
             batch_size=batch,
             output_path=output,
         )

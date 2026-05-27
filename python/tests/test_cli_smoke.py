@@ -21,6 +21,8 @@ class CliSmokeTest(unittest.TestCase):
             "analyze-rank",
             "analyze-material-labels",
             "analyze-material-signal",
+            "diagnose-parallel-fusion",
+            "trace-processed-rows",
             "eval-dataset",
             "eval",
             "battle",
@@ -68,6 +70,34 @@ class CliSmokeTest(unittest.TestCase):
         self.assertIn("Staging split: train,", result.output)
         self.assertIn("validation, test, or all", result.output)
         self.assertIn("--full", result.output)
+
+    def test_diagnose_parallel_fusion_help_lists_core_options(self):
+        result = CliRunner().invoke(
+            cli_module.app,
+            ["diagnose-parallel-fusion", "--help"],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("Dataset split: train,", result.output)
+        self.assertIn("validation", result.output)
+        self.assertIn("test", result.output)
+        self.assertIn("--rows", result.output)
+        self.assertIn("--batch", result.output)
+        self.assertIn("--device", result.output)
+
+    def test_trace_processed_rows_help_lists_core_options(self):
+        result = CliRunner().invoke(
+            cli_module.app,
+            ["trace-processed-rows", "--help"],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("Dataset split: train,", result.output)
+        self.assertIn("validation", result.output)
+        self.assertIn("test", result.output)
+        self.assertIn("--top-worst", result.output)
+        self.assertIn("--top-best", result.output)
+        self.assertIn("--staging", result.output)
 
     def test_train_rejects_unknown_model_variant_with_allowed_values(self):
         result = CliRunner().invoke(
