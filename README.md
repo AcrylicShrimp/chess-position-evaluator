@@ -96,6 +96,12 @@ The CLI defaults `TORCHINDUCTOR_CACHE_DIR` to
 TorchInductor and Triton compile/autotune cache files project-local while still
 allowing an explicit environment override.
 
+## Runbooks
+
+Reusable operating procedures live under `docs/runbooks/`. Start with
+`docs/runbooks/README.md` for training, evaluation, benchmarking, rank analysis,
+dataset diagnostics, and experiment logging workflows.
+
 ## Data Preparation
 
 Training data comes from the

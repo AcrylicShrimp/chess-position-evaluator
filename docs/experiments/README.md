@@ -1,5 +1,14 @@
 # Experiment Logging Notes
 
+## Related Runbooks
+
+- [Full Training Experiment](../runbooks/full-training-experiment.md)
+- [Evaluate Checkpoint](../runbooks/evaluate-checkpoint.md)
+- [Pareto Benchmark](../runbooks/pareto-benchmark.md)
+- [Rank Analysis](../runbooks/rank-analysis.md)
+- [Dataset Diagnostics](../runbooks/dataset-diagnostics.md)
+- [Log Experiment](../runbooks/log-experiment.md)
+
 ## Comparative Training Recipe Check
 
 Before starting any comparative training experiment, record a recipe comparison in the experiment log.
