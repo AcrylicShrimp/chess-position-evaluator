@@ -33,6 +33,9 @@ MODEL_VARIANT_FUNNEL_CNN_ATTENTION = "funnel-cnn224-160-128-attn6-edgegate"
 MODEL_VARIANT_FUNNEL_INTERLEAVED_ATTENTION = (
     "funnel-cnn224-160-128-interleave-attn3-edgegate"
 )
+MODEL_VARIANT_FUNNEL_DEPTH_REFRESH_ATTENTION = (
+    "funnel-cnn224-160-128-attn6-refresh3-edgegate"
+)
 SUPPORTED_MODEL_VARIANTS = (
     MODEL_VARIANT_STACKED_EDGE_GATE_FFN,
     MODEL_VARIANT_ONE_LAYER_EDGE_GATE,
@@ -44,6 +47,7 @@ SUPPORTED_MODEL_VARIANTS = (
     MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_LATEEVIDENCE_NO_MATERIAL,
     MODEL_VARIANT_FUNNEL_CNN_ATTENTION,
     MODEL_VARIANT_FUNNEL_INTERLEAVED_ATTENTION,
+    MODEL_VARIANT_FUNNEL_DEPTH_REFRESH_ATTENTION,
 )
 EDGE_GATE_QK = "qk"
 EDGE_GATE_Q_ONLY = "q-only"
@@ -59,6 +63,8 @@ FUNNEL_ATTENTION_CHANNELS = 128
 FUNNEL_BLOCKS_PER_STAGE = 2
 FUNNEL_ATTENTION_LAYERS = 6
 FUNNEL_INTERLEAVED_STAGES = 3
+FUNNEL_REFRESH_STAGES = 3
+FUNNEL_ATTENTION_PER_REFRESH = 2
 BOARD_ATTENTION_SIZE = 8
 BOARD_ATTENTION_RELATIONS = (
     "same_square",
@@ -772,6 +778,75 @@ class FunnelInterleavedAttentionTrunk(torch.nn.Module):
         return x
 
 
+class AttentionPairCnnRefreshBlock(torch.nn.Module):
+    def __init__(self, channels: int):
+        super().__init__()
+        self.attention_blocks = torch.nn.ModuleList(
+            [
+                BoardAttentionBlock(
+                    channels,
+                    ATTENTION_HEADS,
+                    ATTENTION_HEAD_DIM,
+                    ATTENTION_FFN_HIDDEN,
+                )
+                for _ in range(FUNNEL_ATTENTION_PER_REFRESH)
+            ]
+        )
+        self.refresh = GhostShuffleBlock(channels, ratio=4)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for attention_block in self.attention_blocks:
+            x = attention_block(x)
+        return self.refresh(x)
+
+
+class FunnelDepthRefreshAttentionTrunk(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.wide_blocks = torch.nn.Sequential(
+            *[
+                GhostShuffleBlock(FUNNEL_INITIAL_CHANNELS, ratio=4)
+                for _ in range(FUNNEL_BLOCKS_PER_STAGE)
+            ]
+        )
+        self.compress_wide_to_mid = ChannelProjection(
+            FUNNEL_INITIAL_CHANNELS,
+            FUNNEL_MID_CHANNELS,
+        )
+        self.mid_blocks = torch.nn.Sequential(
+            *[
+                GhostShuffleBlock(FUNNEL_MID_CHANNELS, ratio=4)
+                for _ in range(FUNNEL_BLOCKS_PER_STAGE)
+            ]
+        )
+        self.compress_mid_to_attention = ChannelProjection(
+            FUNNEL_MID_CHANNELS,
+            FUNNEL_ATTENTION_CHANNELS,
+        )
+        self.narrow_blocks = torch.nn.Sequential(
+            *[
+                GhostShuffleBlock(FUNNEL_ATTENTION_CHANNELS, ratio=4)
+                for _ in range(FUNNEL_BLOCKS_PER_STAGE)
+            ]
+        )
+        self.depth_refresh_blocks = torch.nn.ModuleList(
+            [
+                AttentionPairCnnRefreshBlock(FUNNEL_ATTENTION_CHANNELS)
+                for _ in range(FUNNEL_REFRESH_STAGES)
+            ]
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.wide_blocks(x)
+        x = self.compress_wide_to_mid(x)
+        x = self.mid_blocks(x)
+        x = self.compress_mid_to_attention(x)
+        x = self.narrow_blocks(x)
+        for block in self.depth_refresh_blocks:
+            x = block(x)
+        return x
+
+
 def build_board_attention(model_variant: str) -> torch.nn.Module:
     if model_variant == MODEL_VARIANT_STACKED_EDGE_GATE_FFN:
         return BoardAttentionStack(
@@ -1106,6 +1181,7 @@ class ValueOnlyModel(torch.nn.Module):
             in {
                 MODEL_VARIANT_FUNNEL_CNN_ATTENTION,
                 MODEL_VARIANT_FUNNEL_INTERLEAVED_ATTENTION,
+                MODEL_VARIANT_FUNNEL_DEPTH_REFRESH_ATTENTION,
             }
             else CHANNELS
         )
@@ -1121,6 +1197,9 @@ class ValueOnlyModel(torch.nn.Module):
             self.value_head = ValueHead(channels=FUNNEL_ATTENTION_CHANNELS)
         elif model_variant == MODEL_VARIANT_FUNNEL_INTERLEAVED_ATTENTION:
             self.trunk = FunnelInterleavedAttentionTrunk()
+            self.value_head = ValueHead(channels=FUNNEL_ATTENTION_CHANNELS)
+        elif model_variant == MODEL_VARIANT_FUNNEL_DEPTH_REFRESH_ATTENTION:
+            self.trunk = FunnelDepthRefreshAttentionTrunk()
             self.value_head = ValueHead(channels=FUNNEL_ATTENTION_CHANNELS)
         elif model_variant == MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE:
             self.trunk = ParallelCnnAttentionTrunk()
@@ -1173,6 +1252,7 @@ class ValueOnlyModel(torch.nn.Module):
         if self.model_variant in {
             MODEL_VARIANT_FUNNEL_CNN_ATTENTION,
             MODEL_VARIANT_FUNNEL_INTERLEAVED_ATTENTION,
+            MODEL_VARIANT_FUNNEL_DEPTH_REFRESH_ATTENTION,
         }:
             out = self.trunk(out)
             return self.value_head(out, material_diff)

@@ -152,6 +152,15 @@ def register_hooks(model: ValueOnlyModel) -> dict:
                 block.refresh.register_forward_hook(
                     make_hook(f"interleaved_refresh_{i}")
                 )
+        if hasattr(model.trunk, "depth_refresh_blocks"):
+            for i, block in enumerate(model.trunk.depth_refresh_blocks):
+                for j, attention_block in enumerate(block.attention_blocks):
+                    attention_block.register_forward_hook(
+                        make_hook(f"depth_refresh_attention_{i}_{j}")
+                    )
+                block.refresh.register_forward_hook(
+                    make_hook(f"depth_refresh_{i}")
+                )
     elif hasattr(model, "trunk"):
         for i, block in enumerate(model.trunk.shared_blocks):
             block.register_forward_hook(make_hook(f"shared_block_{i}"))

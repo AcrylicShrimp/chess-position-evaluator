@@ -812,6 +812,91 @@ class ModelAttentionTest(unittest.TestCase):
             336509,
         )
 
+    def test_funnel_depth_refresh_attention_variant_topology(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=(
+                model_module.MODEL_VARIANT_FUNNEL_DEPTH_REFRESH_ATTENTION
+            ),
+        )
+        model.eval()
+
+        self.assertIsInstance(
+            model.trunk, model_module.FunnelDepthRefreshAttentionTrunk)
+        self.assertIsInstance(model.value_head, model_module.ValueHead)
+        self.assertFalse(hasattr(model, "blocks"))
+        self.assertFalse(hasattr(model, "board_attention"))
+
+        initial_conv = model.initial_block[0]
+        self.assertEqual(initial_conv.in_channels, 24)
+        self.assertEqual(
+            initial_conv.out_channels, model_module.FUNNEL_INITIAL_CHANNELS)
+        self.assertEqual(len(model.trunk.wide_blocks), 2)
+        self.assertEqual(len(model.trunk.mid_blocks), 2)
+        self.assertEqual(len(model.trunk.narrow_blocks), 2)
+        self.assertEqual(
+            len(model.trunk.depth_refresh_blocks),
+            model_module.FUNNEL_REFRESH_STAGES,
+        )
+
+        total_attention_blocks = 0
+        for block in model.trunk.depth_refresh_blocks:
+            self.assertIsInstance(
+                block, model_module.AttentionPairCnnRefreshBlock)
+            self.assertEqual(
+                len(block.attention_blocks),
+                model_module.FUNNEL_ATTENTION_PER_REFRESH,
+            )
+            self.assertIsInstance(block.refresh,
+                                  model_module.GhostShuffleBlock)
+            for attention_block in block.attention_blocks:
+                total_attention_blocks += 1
+                self.assertIsInstance(
+                    attention_block, model_module.BoardAttentionBlock)
+                self.assertEqual(
+                    attention_block.attention.channels,
+                    model_module.FUNNEL_ATTENTION_CHANNELS,
+                )
+                self.assertEqual(
+                    attention_block.attention.edge_gate_mode,
+                    model_module.EDGE_GATE_QK,
+                )
+                self.assertEqual(
+                    attention_block.attention.q_proj.out_channels, 64)
+                self.assertEqual(
+                    attention_block.attention.out_proj.in_channels, 64)
+                self.assertEqual(
+                    attention_block.ffn.net[0].out_channels, 64)
+
+        self.assertEqual(
+            total_attention_blocks,
+            model_module.FUNNEL_ATTENTION_LAYERS,
+        )
+        self.assertEqual(
+            model.value_head.conv[0].in_channels,
+            model_module.FUNNEL_ATTENTION_CHANNELS,
+        )
+
+        with torch.no_grad():
+            trunk_output = model.trunk(
+                torch.zeros(
+                    1,
+                    model_module.FUNNEL_INITIAL_CHANNELS,
+                    8,
+                    8,
+                )
+            )
+            output = model(torch.zeros(1, 20, 8, 8))
+
+        self.assertEqual(
+            trunk_output.shape,
+            torch.Size([1, model_module.FUNNEL_ATTENTION_CHANNELS, 8, 8]),
+        )
+        self.assertEqual(output.shape, torch.Size([1, 1]))
+        self.assertEqual(
+            sum(p.numel() for p in model.parameters()),
+            490877,
+        )
+
     def test_supported_model_variants_include_parallel_fusion(self):
         self.assertIn(
             model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,
@@ -845,6 +930,10 @@ class ModelAttentionTest(unittest.TestCase):
         )
         self.assertIn(
             model_module.MODEL_VARIANT_FUNNEL_INTERLEAVED_ATTENTION,
+            model_module.SUPPORTED_MODEL_VARIANTS,
+        )
+        self.assertIn(
+            model_module.MODEL_VARIANT_FUNNEL_DEPTH_REFRESH_ATTENTION,
             model_module.SUPPORTED_MODEL_VARIANTS,
         )
 
