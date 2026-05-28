@@ -6,6 +6,8 @@ INTERIM_DATA_DIR = DATA_DIR / "interim"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
 
 ARTIFACTS_DIR = Path("artifacts")
+CACHE_DIR = ARTIFACTS_DIR / "cache"
+INDUCTOR_CACHE_DIR = CACHE_DIR / "torchinductor"
 CHECKPOINTS_DIR = ARTIFACTS_DIR / "checkpoints"
 ONNX_DIR = ARTIFACTS_DIR / "onnx"
 REPORTS_DIR = ARTIFACTS_DIR / "reports"

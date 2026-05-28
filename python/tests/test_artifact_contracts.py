@@ -35,6 +35,11 @@ class ArtifactContractTest(unittest.TestCase):
             paths.TEST_DATA_PATH,
             Path("data/processed/test.chesseval"),
         )
+        self.assertEqual(paths.CACHE_DIR, Path("artifacts/cache"))
+        self.assertEqual(
+            paths.INDUCTOR_CACHE_DIR,
+            Path("artifacts/cache/torchinductor"),
+        )
         self.assertEqual(
             paths.checkpoint_path("experiment"),
             Path("artifacts/checkpoints/experiment.pth"),

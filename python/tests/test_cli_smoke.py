@@ -1,4 +1,5 @@
 import importlib
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -23,6 +24,7 @@ class CliSmokeTest(unittest.TestCase):
             "analyze-material-signal",
             "diagnose-parallel-fusion",
             "trace-processed-rows",
+            "benchmark-pareto",
             "eval-dataset",
             "eval",
             "battle",
@@ -100,6 +102,34 @@ class CliSmokeTest(unittest.TestCase):
         self.assertIn("--top-worst", result.output)
         self.assertIn("--top-best", result.output)
         self.assertIn("--staging", result.output)
+
+    def test_benchmark_pareto_help_lists_core_options(self):
+        result = CliRunner().invoke(
+            cli_module.app,
+            ["benchmark-pareto", "--help"],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("--model", result.output)
+        self.assertIn("--compile-mode", result.output)
+        self.assertIn("max-autotune", result.output)
+        self.assertIn("--output", result.output)
+
+    def test_benchmark_pareto_rejects_unknown_compile_mode(self):
+        result = CliRunner().invoke(
+            cli_module.app,
+            ["benchmark-pareto", "--compile-mode", "turbo"],
+        )
+
+        self.assertNotEqual(result.exit_code, 0, result.output)
+        self.assertIn("Unsupported compile mode 'turbo'", result.output)
+        self.assertIn("max-autotune", result.output)
+
+    def test_cli_sets_project_local_torchinductor_cache_default(self):
+        self.assertEqual(
+            os.environ.get("TORCHINDUCTOR_CACHE_DIR"),
+            str((Path("artifacts/cache/torchinductor")).resolve()),
+        )
 
     def test_train_rejects_unknown_model_variant_with_allowed_values(self):
         result = CliRunner().invoke(

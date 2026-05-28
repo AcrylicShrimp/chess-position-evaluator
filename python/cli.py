@@ -8,6 +8,7 @@ Usage:
     cpe analyze-material-signal
     cpe diagnose-parallel-fusion <parallel-model-name> <baseline-model-name>
     cpe trace-processed-rows <diagnostic-report-path>
+    cpe benchmark-pareto
     cpe eval-dataset <model-name>
     cpe eval <model-name>
     cpe battle <model-name>
@@ -20,6 +21,8 @@ from pathlib import Path
 import re
 import typer
 
+from libs.paths import INDUCTOR_CACHE_DIR
+
 app = typer.Typer(
     name="cpe",
     help="Chess Position Evaluator CLI",
@@ -30,6 +33,15 @@ dotenv_path = find_dotenv(usecwd=True)
 
 if dotenv_path:
     load_dotenv(dotenv_path=dotenv_path)
+
+if "TORCHINDUCTOR_CACHE_DIR" not in os.environ:
+    os.environ["TORCHINDUCTOR_CACHE_DIR"] = str(
+        INDUCTOR_CACHE_DIR.resolve()
+    )
+Path(os.environ["TORCHINDUCTOR_CACHE_DIR"]).mkdir(
+    parents=True,
+    exist_ok=True,
+)
 
 EXPERIMENT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
@@ -366,6 +378,81 @@ def trace_processed_rows(
             top_best=top_best,
             batch_size=batch,
             output_path=output,
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        print(f"Error: {exc}")
+        raise typer.Exit(1) from exc
+
+
+@app.command("benchmark-pareto")
+def benchmark_pareto(
+    model_names: list[str] = typer.Option(
+        None,
+        "--model",
+        help=(
+            "Model checkpoint name without .pth. Repeat to override the "
+            "default Pareto candidate set."
+        ),
+    ),
+    batch: int = typer.Option(
+        2048,
+        min=1,
+        help="Synthetic forward benchmark batch size.",
+    ),
+    warmup: int = typer.Option(
+        20,
+        min=0,
+        help="Warmup forward passes after first compile/forward.",
+    ),
+    iterations: int = typer.Option(
+        50,
+        min=1,
+        help="Measured forward iterations.",
+    ),
+    compile_mode: str = typer.Option(
+        "max-autotune",
+        help=(
+            "Torch compile mode: default, reduce-overhead, max-autotune, "
+            "max-autotune-no-cudagraphs, or none"
+        ),
+    ),
+    device: str = typer.Option("auto", help="Device: auto, cpu, cuda, or mps"),
+    dtype: str = typer.Option(
+        "bf16",
+        help="Autocast dtype: bf16, fp16, or none.",
+    ),
+    output: Path = typer.Option(
+        Path("artifacts/reports/standardized-pareto-benchmark.json"),
+        help="Benchmark report JSON path.",
+    ),
+):
+    """Benchmark checkpoint quality, parameter count, and forward latency."""
+    from benchmark_pareto import (
+        DEFAULT_PARETO_MODELS,
+        BenchmarkConfig,
+        run_pareto_benchmark,
+    )
+    from train.compile_modes import SUPPORTED_COMPILE_MODES
+
+    if compile_mode not in SUPPORTED_COMPILE_MODES:
+        allowed = ", ".join(SUPPORTED_COMPILE_MODES)
+        print(f"Error: Unsupported compile mode '{compile_mode}'")
+        print(f"Expected one of: {allowed}")
+        raise typer.Exit(1)
+
+    selected_models = tuple(model_names or DEFAULT_PARETO_MODELS)
+    try:
+        run_pareto_benchmark(
+            BenchmarkConfig(
+                model_names=selected_models,
+                batch_size=batch,
+                warmup_steps=warmup,
+                iterations=iterations,
+                compile_mode=compile_mode,
+                device_name=device,
+                dtype_name=dtype,
+                output_path=output,
+            )
         )
     except (FileNotFoundError, RuntimeError, ValueError) as exc:
         print(f"Error: {exc}")

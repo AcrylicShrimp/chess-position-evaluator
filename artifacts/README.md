@@ -7,6 +7,7 @@ by Git.
 
 ```text
 artifacts/
+├── cache/        # Local runtime compiler/cache files
 ├── checkpoints/  # Local training checkpoints
 ├── onnx/         # Local ONNX exports
 └── reports/      # Local evaluation reports
@@ -14,6 +15,7 @@ artifacts/
 
 Expected local files:
 
+- `artifacts/cache/torchinductor/` for the project-local TorchInductor cache
 - `artifacts/checkpoints/<experiment-name>.pth`
 - `artifacts/checkpoints/<experiment-name>-best.pth`
 - `artifacts/onnx/<model-name>.onnx`

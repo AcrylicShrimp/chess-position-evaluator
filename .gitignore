@@ -12,6 +12,11 @@
 /data/processed/*
 !/data/processed/.gitkeep
 
+/artifacts/cache/*
+!/artifacts/cache/.gitkeep
+!/artifacts/cache/torchinductor/
+/artifacts/cache/torchinductor/*
+!/artifacts/cache/torchinductor/.gitkeep
 /artifacts/checkpoints/*
 !/artifacts/checkpoints/.gitkeep
 /artifacts/onnx/*

@@ -84,6 +84,18 @@ uv run cpe eval-dataset <model-name> --split validation
 uv run cpe eval-dataset <model-name> --split test --full
 ```
 
+Benchmark existing checkpoints for quality, parameter count, and forward
+latency:
+
+```bash
+uv run cpe benchmark-pareto --output artifacts/reports/pareto.json
+```
+
+The CLI defaults `TORCHINDUCTOR_CACHE_DIR` to
+`artifacts/cache/torchinductor` when the variable is not already set. This keeps
+TorchInductor and Triton compile/autotune cache files project-local while still
+allowing an explicit environment override.
+
 ## Data Preparation
 
 Training data comes from the
@@ -238,6 +250,7 @@ White and Black probabilities.
 chess-position-evaluator/
 ├── python/
 │   ├── cli.py                  # Typer CLI entrypoint
+│   ├── benchmark_pareto.py     # Checkpoint Pareto benchmark
 │   ├── eval.py                 # Interactive FEN evaluation
 │   ├── export_onnx.py          # Checkpoint -> ONNX export
 │   ├── analyze_rank.py         # Activation-rank analysis
@@ -265,6 +278,7 @@ chess-position-evaluator/
 │   ├── interim/
 │   └── processed/
 ├── artifacts/                  # Ignored runtime model artifacts
+│   ├── cache/
 │   ├── checkpoints/
 │   ├── onnx/
 │   └── reports/
