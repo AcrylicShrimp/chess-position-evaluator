@@ -1,6 +1,99 @@
 # Compatibility facade for the model implementation modules.
 
-from libs.modeling import *
+from libs.modeling.attention import (
+    BoardAttentionBlock,
+    BoardAttentionFFN,
+    BoardAttentionStack,
+    IdentityBoardAttention,
+    NaiveBoardSelfAttention,
+    _board_attention_geometry,
+)
+from libs.modeling.constants import (
+    ATTENTION_AFTER_BLOCK,
+    ATTENTION_DIM,
+    ATTENTION_FFN_HIDDEN,
+    ATTENTION_HEAD_DIM,
+    ATTENTION_HEADS,
+    ATTENTION_LAYERS,
+    BLOCKS,
+    BOARD_ATTENTION_RELATIONS,
+    BOARD_ATTENTION_SIZE,
+    CHANNELS,
+    EDGE_GATE_K_ONLY,
+    EDGE_GATE_Q_ONLY,
+    EDGE_GATE_QK,
+    FUNNEL_ATTENTION_CHANNELS,
+    FUNNEL_ATTENTION_LAYERS,
+    FUNNEL_ATTENTION_PER_REFRESH,
+    FUNNEL_BLOCKS_PER_STAGE,
+    FUNNEL_INITIAL_CHANNELS,
+    FUNNEL_INTERLEAVED_STAGES,
+    FUNNEL_MID_CHANNELS,
+    FUNNEL_REFRESH_STAGES,
+    MODEL_VARIANT_FUNNEL_CNN_ATTENTION,
+    MODEL_VARIANT_FUNNEL_DEPTH_REFRESH_ATTENTION,
+    MODEL_VARIANT_FUNNEL_INTERLEAVED_ATTENTION,
+    MODEL_VARIANT_NO_ATTENTION,
+    MODEL_VARIANT_ONE_LAYER_EDGE_GATE,
+    MODEL_VARIANT_PARALLEL_CNN_ATTN_ALIGNED_ADD,
+    MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,
+    MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE_NO_MATERIAL,
+    MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_FUSE_NO_MATERIAL,
+    MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_LATEEVIDENCE_NO_MATERIAL,
+    MODEL_VARIANT_STACKED_EDGE_GATE_FFN,
+)
+from libs.modeling.factory import (
+    ModelFull,
+    ValueOnlyModel,
+    build_board_attention,
+    model_variant_from_checkpoint,
+)
+from libs.modeling.heads import (
+    LateEvidenceValueHead,
+    MaterialFeatureValueHead,
+    PolicyHead,
+    ResidualValueHead,
+    ValueHead,
+)
+from libs.modeling.material import (
+    _MATERIAL_ALPHA,
+    _MATERIAL_FEATURE_COUNT,
+    _MATERIAL_LOGIT_SCALE,
+    _MATERIAL_VALUES,
+    _material_diff_from_board,
+    _material_feature,
+    _material_input_features,
+    _material_prior_logit,
+)
+from libs.modeling.primitives import (
+    AddCoords,
+    ChannelProjection,
+    ChannelShuffle,
+    CoordinateAttention,
+    GhostModule,
+    GhostShuffleBlock,
+)
+from libs.modeling.registry import (
+    DEFAULT_BENCHMARK_CHECKPOINTS,
+    MODEL_VARIANTS,
+    SUPPORTED_MODEL_VARIANTS,
+    BenchmarkCheckpointSpec,
+    ModelVariantSpec,
+    allowed_model_variant_text,
+    default_benchmark_model_names,
+    get_model_variant_spec,
+)
+from libs.modeling.trunks import (
+    AttentionCnnRefreshBlock,
+    AttentionPairCnnRefreshBlock,
+    FunnelCnnAttentionTrunk,
+    FunnelDepthRefreshAttentionTrunk,
+    FunnelInterleavedAttentionTrunk,
+    ParallelCnnAttentionAlignedAddTrunk,
+    ParallelCnnAttentionKEdgeLateEvidenceTrunk,
+    ParallelCnnAttentionTrunk,
+    _run_trunk_blocks,
+)
 
 __all__ = [
     "ATTENTION_AFTER_BLOCK",
@@ -35,7 +128,11 @@ __all__ = [
     "MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_FUSE_NO_MATERIAL",
     "MODEL_VARIANT_PARALLEL_CNN_ATTN_KEDGE_LATEEVIDENCE_NO_MATERIAL",
     "MODEL_VARIANT_STACKED_EDGE_GATE_FFN",
+    "MODEL_VARIANTS",
     "SUPPORTED_MODEL_VARIANTS",
+    "BenchmarkCheckpointSpec",
+    "DEFAULT_BENCHMARK_CHECKPOINTS",
+    "ModelVariantSpec",
     "_MATERIAL_ALPHA",
     "_MATERIAL_FEATURE_COUNT",
     "_MATERIAL_LOGIT_SCALE",
@@ -72,6 +169,9 @@ __all__ = [
     "ValueOnlyModel",
     "_board_attention_geometry",
     "_run_trunk_blocks",
+    "allowed_model_variant_text",
     "build_board_attention",
+    "default_benchmark_model_names",
+    "get_model_variant_spec",
     "model_variant_from_checkpoint",
 ]

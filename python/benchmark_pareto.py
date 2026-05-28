@@ -10,19 +10,11 @@ from typing import Any
 import torch
 
 from libs.model import ValueOnlyModel, model_variant_from_checkpoint
+from libs.modeling.registry import default_benchmark_model_names
 from libs.paths import checkpoint_path, evaluation_report_path
 
 
-DEFAULT_PARETO_MODELS = (
-    "ghost-ca-r4-256ch-mhattn4x16-edgegate3-ffn64-mid1-cleaneddata-warmupcosine5-lr7p5e4-100e-best",
-    "ghost-ca-r4-256ch-mhattn4x16-edgegate3-ffn64-mid1-cleaneddata-warmupcosine5-lr5e4-100e-best",
-    "ghost-ca-r4-256ch-noattn-warmupcosine5-lr5e4-100e-best",
-    "ghost-ca-r4-256ch-edgegate1-warmupcosine5-lr5e4-100e-best",
-    "ghost-ca-r4-funnel-cnn224-160-128-attn6-edgegate-warmupcosine5-lr5e4-100e-best",
-    "ghost-ca-r4-funnel-cnn224-160-128-attn6-refresh3-edgegate-warmupcosine5-lr7p5e4-100e-best",
-    "ghost-ca-r4-256ch-parallel-cnn3-attn3ffn64-fuse1x1-nomaterial-warmupcosine5-lr5e4-100e-best",
-    "ghost-ca-r4-256ch-parallel-cnn3-attn3ffn64-kedge-fuse1x1-nomaterial-warmupcosine5-lr5e4-100e-best",
-)
+DEFAULT_PARETO_MODELS = default_benchmark_model_names()
 
 
 @dataclass(frozen=True)

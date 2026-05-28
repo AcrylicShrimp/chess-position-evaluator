@@ -37,6 +37,7 @@ from libs.modeling.heads import (
 )
 from libs.modeling.material import _MATERIAL_VALUES, _material_diff_from_board
 from libs.modeling.primitives import AddCoords, GhostShuffleBlock
+from libs.modeling.registry import get_model_variant_spec
 from libs.modeling.trunks import (
     FunnelCnnAttentionTrunk,
     FunnelDepthRefreshAttentionTrunk,
@@ -49,6 +50,8 @@ from libs.modeling.trunks import (
 
 
 def build_board_attention(model_variant: str) -> torch.nn.Module:
+    get_model_variant_spec(model_variant)
+
     if model_variant == MODEL_VARIANT_STACKED_EDGE_GATE_FFN:
         return BoardAttentionStack(
             ATTENTION_LAYERS,
@@ -88,6 +91,7 @@ def model_variant_from_checkpoint(checkpoint: dict) -> str:
 class ModelFull(torch.nn.Module):
     def __init__(self, model_variant: str = MODEL_VARIANT_STACKED_EDGE_GATE_FFN):
         super().__init__()
+        get_model_variant_spec(model_variant)
         self.model_variant = model_variant
         self.add_coords = AddCoords(8, 8)
         self.initial_block = torch.nn.Sequential(
@@ -147,6 +151,7 @@ class ModelFull(torch.nn.Module):
 class ValueOnlyModel(torch.nn.Module):
     def __init__(self, model_variant: str = MODEL_VARIANT_STACKED_EDGE_GATE_FFN):
         super().__init__()
+        get_model_variant_spec(model_variant)
         self.model_variant = model_variant
         self.register_buffer(
             "material_weights",

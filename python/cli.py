@@ -21,6 +21,11 @@ from pathlib import Path
 import re
 import typer
 
+from libs.modeling.constants import MODEL_VARIANT_STACKED_EDGE_GATE_FFN
+from libs.modeling.registry import (
+    SUPPORTED_MODEL_VARIANTS,
+    allowed_model_variant_text,
+)
 from libs.paths import INDUCTOR_CACHE_DIR
 
 app = typer.Typer(
@@ -57,17 +62,8 @@ def train(
     lr: float = typer.Option(..., help="Learning rate"),
     wd: float = typer.Option(..., help="Weight decay"),
     model_variant: str = typer.Option(
-        "stacked-edge-gate-ffn",
-        help=(
-            "Model variant: stacked-edge-gate-ffn, one-layer-edge-gate, "
-            "no-attention, parallel-cnn-attn-fuse, or "
-            "parallel-cnn-attn-aligned-add, or "
-            "parallel-cnn-attn-fuse-no-material, or "
-            "parallel-cnn-attn-kedge-fuse-no-material, or "
-            "parallel-cnn-attn-kedge-lateevidence-no-material, or "
-            "funnel-cnn224-160-128-attn6-edgegate, or "
-            "funnel-cnn224-160-128-interleave-attn3-edgegate"
-        ),
+        MODEL_VARIANT_STACKED_EDGE_GATE_FFN,
+        help=f"Model variant: {allowed_model_variant_text()}",
     ),
     scheduler: str = typer.Option(
         "warm-restart",
@@ -131,21 +127,8 @@ def train(
         print("Must match pattern: [A-Za-z0-9_-]+")
         raise typer.Exit(1)
 
-    supported_model_variants = {
-        "stacked-edge-gate-ffn",
-        "one-layer-edge-gate",
-        "no-attention",
-        "parallel-cnn-attn-fuse",
-        "parallel-cnn-attn-aligned-add",
-        "parallel-cnn-attn-fuse-no-material",
-        "parallel-cnn-attn-kedge-fuse-no-material",
-        "parallel-cnn-attn-kedge-lateevidence-no-material",
-        "funnel-cnn224-160-128-attn6-edgegate",
-        "funnel-cnn224-160-128-interleave-attn3-edgegate",
-        "funnel-cnn224-160-128-attn6-refresh3-edgegate",
-    }
-    if model_variant not in supported_model_variants:
-        allowed = ", ".join(sorted(supported_model_variants))
+    if model_variant not in SUPPORTED_MODEL_VARIANTS:
+        allowed = allowed_model_variant_text()
         print(f"Error: Unsupported model variant '{model_variant}'")
         print(f"Expected one of: {allowed}")
         raise typer.Exit(1)
