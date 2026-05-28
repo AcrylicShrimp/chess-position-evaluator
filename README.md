@@ -102,6 +102,10 @@ Reusable operating procedures live under `docs/runbooks/`. Start with
 `docs/runbooks/README.md` for training, evaluation, benchmarking, rank analysis,
 dataset diagnostics, and experiment logging workflows.
 
+The execution surface is cataloged in `docs/commands/README.md`, including
+Python CLI commands, Rust workspace crates, artifact paths, status labels, and
+related runbooks.
+
 ## Data Preparation
 
 Training data comes from the
@@ -289,6 +293,8 @@ chess-position-evaluator/
 │   ├── onnx/
 │   └── reports/
 ├── docs/todos/
+├── docs/commands/
+├── docs/runbooks/
 ├── pyproject.toml
 ├── uv.lock
 ├── Cargo.toml
