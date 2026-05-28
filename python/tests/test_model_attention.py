@@ -741,6 +741,77 @@ class ModelAttentionTest(unittest.TestCase):
             474197,
         )
 
+    def test_funnel_interleaved_attention_variant_topology(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=(
+                model_module.MODEL_VARIANT_FUNNEL_INTERLEAVED_ATTENTION
+            ),
+        )
+        model.eval()
+
+        self.assertIsInstance(
+            model.trunk, model_module.FunnelInterleavedAttentionTrunk)
+        self.assertIsInstance(model.value_head, model_module.ValueHead)
+        self.assertFalse(hasattr(model, "blocks"))
+        self.assertFalse(hasattr(model, "board_attention"))
+
+        initial_conv = model.initial_block[0]
+        self.assertEqual(initial_conv.in_channels, 24)
+        self.assertEqual(
+            initial_conv.out_channels, model_module.FUNNEL_INITIAL_CHANNELS)
+        self.assertEqual(len(model.trunk.wide_blocks), 2)
+        self.assertEqual(len(model.trunk.mid_blocks), 2)
+        self.assertEqual(len(model.trunk.narrow_blocks), 2)
+        self.assertEqual(
+            len(model.trunk.interleaved_blocks),
+            model_module.FUNNEL_INTERLEAVED_STAGES,
+        )
+
+        for block in model.trunk.interleaved_blocks:
+            self.assertIsInstance(
+                block, model_module.AttentionCnnRefreshBlock)
+            self.assertIsInstance(
+                block.attention, model_module.BoardAttentionBlock)
+            self.assertIsInstance(
+                block.refresh, model_module.GhostShuffleBlock)
+            self.assertEqual(
+                block.attention.attention.channels,
+                model_module.FUNNEL_ATTENTION_CHANNELS,
+            )
+            self.assertEqual(
+                block.attention.attention.edge_gate_mode,
+                model_module.EDGE_GATE_QK,
+            )
+            self.assertEqual(block.attention.attention.q_proj.out_channels, 64)
+            self.assertEqual(block.attention.attention.out_proj.in_channels, 64)
+            self.assertEqual(block.attention.ffn.net[0].out_channels, 64)
+
+        self.assertEqual(
+            model.value_head.conv[0].in_channels,
+            model_module.FUNNEL_ATTENTION_CHANNELS,
+        )
+
+        with torch.no_grad():
+            trunk_output = model.trunk(
+                torch.zeros(
+                    1,
+                    model_module.FUNNEL_INITIAL_CHANNELS,
+                    8,
+                    8,
+                )
+            )
+            output = model(torch.zeros(1, 20, 8, 8))
+
+        self.assertEqual(
+            trunk_output.shape,
+            torch.Size([1, model_module.FUNNEL_ATTENTION_CHANNELS, 8, 8]),
+        )
+        self.assertEqual(output.shape, torch.Size([1, 1]))
+        self.assertEqual(
+            sum(p.numel() for p in model.parameters()),
+            336509,
+        )
+
     def test_supported_model_variants_include_parallel_fusion(self):
         self.assertIn(
             model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,
@@ -770,6 +841,10 @@ class ModelAttentionTest(unittest.TestCase):
         )
         self.assertIn(
             model_module.MODEL_VARIANT_FUNNEL_CNN_ATTENTION,
+            model_module.SUPPORTED_MODEL_VARIANTS,
+        )
+        self.assertIn(
+            model_module.MODEL_VARIANT_FUNNEL_INTERLEAVED_ATTENTION,
             model_module.SUPPORTED_MODEL_VARIANTS,
         )
 

@@ -136,6 +136,10 @@ class CliSmokeTest(unittest.TestCase):
                       result.output)
         self.assertIn("funnel-cnn224-160-128-attn6-edgegate",
                       result.output)
+        self.assertIn(
+            "funnel-cnn224-160-128-interleave-attn3-edgegate",
+            result.output,
+        )
 
     def test_train_rejects_unknown_compile_mode_with_allowed_values(self):
         result = CliRunner().invoke(

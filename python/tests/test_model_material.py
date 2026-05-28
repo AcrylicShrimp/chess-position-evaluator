@@ -313,6 +313,49 @@ class ModelMaterialFeatureTest(unittest.TestCase):
         self.assertTrue(torch.equal(
             capture_head.material_diff, torch.tensor([7.0])))
 
+    def test_funnel_interleaved_variant_passes_material_diff_to_value_head(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=(
+                model_module.MODEL_VARIANT_FUNNEL_INTERLEAVED_ATTENTION
+            ),
+        )
+        model.eval()
+        capture_head = CaptureValueHead()
+        model.value_head = capture_head
+
+        with torch.no_grad():
+            output = model(make_known_material_board())
+
+        self.assertTrue(torch.equal(output, torch.zeros_like(output)))
+        self.assertEqual(
+            capture_head.activation_shape,
+            torch.Size(
+                [1, model_module.FUNNEL_ATTENTION_CHANNELS, 8, 8]
+            ),
+        )
+        self.assertTrue(torch.equal(
+            capture_head.material_diff, torch.tensor([-4.0])))
+
+    def test_funnel_interleaved_variant_explicit_material_diff_overrides_board_material(self):
+        model = model_module.ValueOnlyModel(
+            model_variant=(
+                model_module.MODEL_VARIANT_FUNNEL_INTERLEAVED_ATTENTION
+            ),
+        )
+        model.eval()
+        capture_head = CaptureValueHead()
+        model.value_head = capture_head
+
+        with torch.no_grad():
+            output = model(
+                make_known_material_board(),
+                material_diff=torch.tensor([7.0]),
+            )
+
+        self.assertTrue(torch.equal(output, torch.zeros_like(output)))
+        self.assertTrue(torch.equal(
+            capture_head.material_diff, torch.tensor([7.0])))
+
     def test_value_only_top_level_material_weights_are_not_checkpoint_state(self):
         model = model_module.ValueOnlyModel(
             model_variant=model_module.MODEL_VARIANT_PARALLEL_CNN_ATTN_FUSE,

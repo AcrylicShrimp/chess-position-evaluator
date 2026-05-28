@@ -141,8 +141,17 @@ def register_hooks(model: ValueOnlyModel) -> dict:
         )
         for i, block in enumerate(model.trunk.narrow_blocks):
             block.register_forward_hook(make_hook(f"narrow_block_{i}"))
-        for i, block in enumerate(model.trunk.attention_blocks.layers):
-            block.register_forward_hook(make_hook(f"attention_block_{i}"))
+        if hasattr(model.trunk, "attention_blocks"):
+            for i, block in enumerate(model.trunk.attention_blocks.layers):
+                block.register_forward_hook(make_hook(f"attention_block_{i}"))
+        if hasattr(model.trunk, "interleaved_blocks"):
+            for i, block in enumerate(model.trunk.interleaved_blocks):
+                block.attention.register_forward_hook(
+                    make_hook(f"interleaved_attention_{i}")
+                )
+                block.refresh.register_forward_hook(
+                    make_hook(f"interleaved_refresh_{i}")
+                )
     elif hasattr(model, "trunk"):
         for i, block in enumerate(model.trunk.shared_blocks):
             block.register_forward_hook(make_hook(f"shared_block_{i}"))

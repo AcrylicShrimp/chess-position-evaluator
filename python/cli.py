@@ -53,7 +53,8 @@ def train(
             "parallel-cnn-attn-fuse-no-material, or "
             "parallel-cnn-attn-kedge-fuse-no-material, or "
             "parallel-cnn-attn-kedge-lateevidence-no-material, or "
-            "funnel-cnn224-160-128-attn6-edgegate"
+            "funnel-cnn224-160-128-attn6-edgegate, or "
+            "funnel-cnn224-160-128-interleave-attn3-edgegate"
         ),
     ),
     scheduler: str = typer.Option(
@@ -128,6 +129,7 @@ def train(
         "parallel-cnn-attn-kedge-fuse-no-material",
         "parallel-cnn-attn-kedge-lateevidence-no-material",
         "funnel-cnn224-160-128-attn6-edgegate",
+        "funnel-cnn224-160-128-interleave-attn3-edgegate",
     }
     if model_variant not in supported_model_variants:
         allowed = ", ".join(sorted(supported_model_variants))
